@@ -4,9 +4,11 @@ import {
   getAuthUser,
   isAdmin,
 } from '@/lib/auth'
-import path from 'path'
-import fs from 'fs'
-import { v4 as uuidv4 } from 'uuid'
+import {
+  ProductImageValidationError,
+  removeProductImage,
+  uploadProductImage,
+} from '@/lib/product-images'
 
 function requireAdmin(req: Request) {
   const user = getAuthUser(req)
@@ -58,29 +60,32 @@ export async function PUT(
     )
     const image = formData.get('image') as File
 
-    let imagePath = null
+    const productId = Number(id)
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return NextResponse.json(
+        { message: 'Invalid product id' },
+        { status: 400 }
+      )
+    }
+
+    const { data: existingProduct, error: existingProductError } = await db
+      .from('products')
+      .select('image_url')
+      .eq('id', productId)
+      .maybeSingle()
+
+    if (existingProductError) throw existingProductError
+
+    if (!existingProduct) {
+      return NextResponse.json(
+        { message: 'Product not found' },
+        { status: 404 }
+      )
+    }
 
     if (image && image.size > 0) {
-      const bytes = await image.arrayBuffer()
-      const buffer = Buffer.from(bytes)
-
-      const filename =
-        uuidv4() + path.extname(image.name)
-
-      const uploadDir = path.join(
-        process.cwd(),
-        'public/uploads'
-      )
-
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true })
-      }
-
-      const filePath = path.join(uploadDir, filename)
-
-      fs.writeFileSync(filePath, buffer)
-
-      imagePath = `/uploads/${filename}`
+      const imagePath = await uploadProductImage(image)
 
       const { error } = await db
         .from('products')
@@ -91,9 +96,11 @@ export async function PUT(
           product_price: Number(productPrice),
           image_url: imagePath,
         })
-        .eq('id', Number(id))
+        .eq('id', productId)
 
       if (error) throw error
+
+      await removeProductImage(existingProduct.image_url)
     } else {
       const { error } = await db
         .from('products')
@@ -103,7 +110,7 @@ export async function PUT(
           product_description: productDescription || null,
           product_price: Number(productPrice),
         })
-        .eq('id', Number(id))
+        .eq('id', productId)
 
       if (error) throw error
     }
@@ -112,6 +119,23 @@ export async function PUT(
       message: 'Product updated successfully',
     })
   } catch (error) {
+    if (
+      error instanceof TypeError &&
+      error.message === 'Failed to parse body as FormData.'
+    ) {
+      return NextResponse.json(
+        { message: 'Invalid multipart form data.' },
+        { status: 400 }
+      )
+    }
+
+    if (error instanceof ProductImageValidationError) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: 400 }
+      )
+    }
+
     console.error(
       'UPDATE PRODUCT ERROR:',
       error
@@ -139,13 +163,38 @@ export async function DELETE(
 
   try {
     const { id } = await params
+    const productId = Number(id)
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return NextResponse.json(
+        { message: 'Invalid product id' },
+        { status: 400 }
+      )
+    }
+
+    const { data: existingProduct, error: existingProductError } = await db
+      .from('products')
+      .select('image_url')
+      .eq('id', productId)
+      .maybeSingle()
+
+    if (existingProductError) throw existingProductError
+
+    if (!existingProduct) {
+      return NextResponse.json(
+        { message: 'Product not found' },
+        { status: 404 }
+      )
+    }
 
     const { error } = await db
       .from('products')
       .delete()
-      .eq('id', Number(id))
+      .eq('id', productId)
 
     if (error) throw error
+
+    await removeProductImage(existingProduct.image_url)
 
     return NextResponse.json({
       message: 'Product deleted successfully',

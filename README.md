@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mr. Oey Bakery
 
-## Getting Started
+Application bakery built with Next.js, Midtrans, and Supabase PostgreSQL.
 
-First, run the development server:
+## Run locally
 
 ```bash
+npm install
+copy .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Fill in `.env.local` with the project credentials. Never commit this file.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are public browser settings. `SUPABASE_SECRET_KEY`, `JWT_SECRET`, and the Midtrans server credentials are server-only and must not use the `NEXT_PUBLIC_` prefix.
 
-## Learn More
+API routes access Supabase with `SUPABASE_SECRET_KEY`, while application authorization remains enforced by the app's JWT middleware. Keep Supabase RLS enabled; the secret key must only be available to the server.
 
-To learn more about Next.js, take a look at the following resources:
+## Database setup
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Import the PostgreSQL schema into the target Supabase project, then run the seed SQL for required data such as `categories`. The application expects the tables defined by the migration: users, categories, products, carts, orders, order_items, payments, payment_logs, and locations.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Product images are stored in the public `product-images` Supabase Storage bucket. It accepts JPEG, PNG, WebP, and GIF files up to 5 MB.
 
-## Deploy on Vercel
+## Verification
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx tsc --noEmit
+npm run build
+```

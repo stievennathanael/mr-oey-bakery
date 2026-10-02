@@ -4,9 +4,10 @@ import {
   getAuthUser,
   isAdmin,
 } from '@/lib/auth'
-import path from 'path'
-import fs from 'fs'
-import { v4 as uuidv4 } from 'uuid'
+import {
+  ProductImageValidationError,
+  uploadProductImage,
+} from '@/lib/product-images'
 
 function requireAdmin(req: Request) {
   const user = getAuthUser(req)
@@ -96,43 +97,8 @@ export async function POST(req: Request) {
       image &&
       image.size > 0
     ) {
-      const bytes =
-        await image.arrayBuffer()
-
-      const buffer =
-        Buffer.from(bytes)
-
-      const filename =
-        uuidv4() +
-        path.extname(image.name)
-
-      const uploadDir = path.join(
-        process.cwd(),
-        'public/uploads'
-      )
-
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, {
-          recursive: true,
-        })
-      }
-
-      fs.writeFileSync(
-        path.join(uploadDir, filename),
-        buffer
-      )
-
-      imagePath =
-        `/uploads/${filename}`
+      imagePath = await uploadProductImage(image)
     }
-
-    console.log({
-      productName,
-      productDescription,
-      productPrice,
-      categoryId,
-      image,
-    })
     
     const { error } = await db
       .from('products')
@@ -150,15 +116,28 @@ export async function POST(req: Request) {
       message: 'Product created successfully',
     })
   } catch (error) {
-    console.error(
-      'CREATE PRODUCT ERROR:', 
-      error
-    )
+    if (
+      error instanceof TypeError &&
+      error.message === 'Failed to parse body as FormData.'
+    ) {
+      return NextResponse.json(
+        { message: 'Invalid multipart form data.' },
+        { status: 400 }
+      )
+    }
+
+    if (error instanceof ProductImageValidationError) {
+      return NextResponse.json(
+        { message: error.message },
+        { status: 400 }
+      )
+    }
+
+    console.error('CREATE PRODUCT ERROR:', error)
 
     return NextResponse.json(
       {
         message: 'Failed to create product',
-        error: String(error),
       },
       { status: 500 }
     )

@@ -12,9 +12,15 @@ type TokenPayload = JwtPayload & {
   role?: string
 }
 
-const getJwtSecret = () =>
-  process.env.JWT_SECRET ||
-  'MrOeyLocalDevelopmentSecret'
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET?.trim()
+
+  if (!secret) {
+    throw new Error('JWT_SECRET is not configured.')
+  }
+
+  return secret
+}
 
 export function signAuthToken(user: AuthUser) {
   return jwt.sign(
