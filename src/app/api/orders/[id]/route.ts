@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import type { ResultSetHeader } from 'mysql2'
 import { db } from '@/lib/db'
 import {
   getAuthUser,
@@ -83,22 +82,13 @@ export async function PATCH(
 
     await expirePendingPayments()
 
-    const [orderRows] = await db.query(
-      `
-      SELECT payment_status, order_status
-      FROM orders
-      WHERE id = ?
-      LIMIT 1
-      `,
-      [orderId]
-    )
+    const { data: order, error: orderError } = await db
+      .from('orders')
+      .select('payment_status, order_status')
+      .eq('id', orderId)
+      .maybeSingle()
 
-    const order = (
-      orderRows as Array<{
-        payment_status: string
-        order_status: string
-      }>
-    )[0]
+    if (orderError) throw orderError
 
     if (!order) {
       return NextResponse.json(
@@ -127,20 +117,16 @@ export async function PATCH(
       )
     }
 
-    const [result] =
-      await db.query<ResultSetHeader>(
-        `
-        UPDATE orders
-        SET order_status = ?
-        WHERE id = ?
-        `,
-        [
-          orderStatus,
-          orderId,
-        ]
-      )
+    const { data: updatedOrder, error: updateError } =
+      await db
+        .from('orders')
+        .update({ order_status: orderStatus })
+        .eq('id', orderId)
+        .select('id')
 
-    if (result.affectedRows === 0) {
+    if (updateError) throw updateError
+
+    if (!updatedOrder?.length) {
       return NextResponse.json(
         {
           message: 'Order not found',

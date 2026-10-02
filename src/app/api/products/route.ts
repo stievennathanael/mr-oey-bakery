@@ -27,22 +27,37 @@ function requireAdmin(req: Request) {
 
 export async function GET() {
   try {
-    const [rows] = await db.query(`
-      SELECT
-        products.id,
-        products.category_id,
-        products.product_name,
-        products.product_description,
-        products.product_price,
-        products.image_url,
-        products.created_at,
-        products.updated_at,
-        categories.name as category_name
-      FROM products
-      LEFT JOIN categories
-      ON products.category_id = categories.id
-      ORDER BY products.created_at DESC
-    `)
+    const { data, error } = await db
+      .from('products')
+      .select(
+        `
+          id,
+          category_id,
+          product_name,
+          product_description,
+          product_price,
+          image_url,
+          created_at,
+          updated_at,
+          categories (name)
+        `
+      )
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    const rows = (data || []).map(
+      ({ categories, ...product }) => {
+        const category = Array.isArray(categories)
+          ? categories[0]
+          : categories
+
+        return {
+          ...product,
+          category_name: category?.name || null,
+        }
+      }
+    )
 
     return NextResponse.json(rows)
   } catch (error) {
@@ -70,7 +85,9 @@ export async function POST(req: Request) {
     const productPrice =
       (formData.get('product_price') ||
         formData.get('price')) as string
-    const category_id = formData.get('category_id') as string
+    const categoryId = Number(
+      formData.get('category_id') || 0
+    )
     const image = formData.get('image') as File
 
     let imagePath = null
@@ -113,30 +130,21 @@ export async function POST(req: Request) {
       productName,
       productDescription,
       productPrice,
-      category_id,
+      categoryId,
       image,
     })
     
-    await db.query(
-      `
-      INSERT INTO products
-      (
-        category_id,
-        product_name,
-        product_description,
-        product_price,
-        image_url
-      )
-      VALUES (?, ?, ?, ?, ?)
-      `,
-      [
-        category_id || null,
-        productName,
-        productDescription,
-        productPrice,
-        imagePath,
-      ]
-    )
+    const { error } = await db
+      .from('products')
+      .insert({
+        category_id: categoryId || null,
+        product_name: productName,
+        product_description: productDescription || null,
+        product_price: Number(productPrice),
+        image_url: imagePath,
+      })
+
+    if (error) throw error
 
     return NextResponse.json({
       message: 'Product created successfully',

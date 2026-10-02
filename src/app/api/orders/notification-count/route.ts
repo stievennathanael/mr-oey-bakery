@@ -1,15 +1,9 @@
 import { NextResponse } from 'next/server'
-import type { RowDataPacket } from 'mysql2'
 import { db } from '@/lib/db'
 import {
   getAuthUser,
   isAdmin,
 } from '@/lib/auth'
-
-type OrderNotificationCountRow =
-  RowDataPacket & {
-    total: string | number
-  }
 
 export async function GET(req: Request) {
   const user = getAuthUser(req)
@@ -26,17 +20,13 @@ export async function GET(req: Request) {
   }
 
   try {
-    const [rows] =
-      await db.query<OrderNotificationCountRow[]>(
-        `
-        SELECT COUNT(*) as total
-        FROM orders
-        WHERE LOWER(payment_status) = 'paid'
-          AND LOWER(COALESCE(order_status, '')) <> 'completed'
-        `
-      )
+    const { count, error } = await db
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('payment_status', 'paid')
+      .neq('order_status', 'completed')
 
-    const count = Number(rows[0]?.total || 0)
+    if (error) throw error
 
     return NextResponse.json({
       count: Number.isFinite(count) ? count : 0,

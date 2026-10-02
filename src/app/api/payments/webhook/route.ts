@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import type { RowDataPacket } from 'mysql2'
 import { db } from '@/lib/db'
 import {
   expirePendingPayments,
@@ -13,15 +12,19 @@ import {
 
 type WebhookBody = Record<string, unknown>
 
-type PaymentNotificationRow =
-  RowDataPacket & {
-    id: number
-    order_id: number
-    transaction_id: string | null
-    amount: string | number
-    invoice_number: string
-    order_status: string
-  }
+type PaymentNotificationRow = {
+  id: number
+  order_id: number
+  transaction_id: string | null
+  payment_type: string | null
+  amount: string | number
+}
+
+type OrderNotificationRow = {
+  id: number
+  invoice_number: string
+  order_status: string
+}
 
 function getText(value: unknown) {
   if (
@@ -35,8 +38,7 @@ function getText(value: unknown) {
 }
 
 function getNullableText(value: unknown) {
-  const text = getText(value)
-  return text || null
+  return getText(value) || null
 }
 
 function getDecimal(value: unknown) {
@@ -44,18 +46,65 @@ function getDecimal(value: unknown) {
   return Number.isFinite(number) ? number : null
 }
 
-function createWebhookResponse(
-  message: string,
-  status = 200
+function createWebhookResponse(message: string, status = 200) {
+  return NextResponse.json({ message }, { status })
+}
+
+async function findPayment(
+  invoiceNumber: string,
+  transactionId: string
 ) {
-  return NextResponse.json(
-    {
-      message,
-    },
-    {
-      status,
-    }
-  )
+  let order: OrderNotificationRow | null = null
+
+  if (invoiceNumber) {
+    const { data, error } = await db
+      .from('orders')
+      .select('id, invoice_number, order_status')
+      .eq('invoice_number', invoiceNumber)
+      .maybeSingle()
+
+    if (error) throw error
+    order = data as OrderNotificationRow | null
+  }
+
+  let payment: PaymentNotificationRow | null = null
+
+  if (order) {
+    const { data, error } = await db
+      .from('payments')
+      .select('id, order_id, transaction_id, payment_type, amount')
+      .eq('order_id', order.id)
+      .maybeSingle()
+
+    if (error) throw error
+    payment = data as PaymentNotificationRow | null
+  }
+
+  if (!payment && transactionId) {
+    const { data, error } = await db
+      .from('payments')
+      .select('id, order_id, transaction_id, payment_type, amount')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+
+    if (error) throw error
+    payment = data as PaymentNotificationRow | null
+  }
+
+  if (!payment) return null
+
+  if (!order) {
+    const { data, error } = await db
+      .from('orders')
+      .select('id, invoice_number, order_status')
+      .eq('id', payment.order_id)
+      .maybeSingle()
+
+    if (error) throw error
+    order = data as OrderNotificationRow | null
+  }
+
+  return order ? { payment, order } : null
 }
 
 export async function POST(req: Request) {
@@ -64,17 +113,11 @@ export async function POST(req: Request) {
   try {
     body = (await req.json()) as WebhookBody
   } catch {
-    return createWebhookResponse(
-      'Invalid webhook payload',
-      400
-    )
+    return createWebhookResponse('Invalid webhook payload', 400)
   }
 
   if (!verifyMidtransSignature(body)) {
-    return createWebhookResponse(
-      'Invalid Midtrans signature',
-      401
-    )
+    return createWebhookResponse('Invalid Midtrans signature', 401)
   }
 
   const transactionStatus =
@@ -83,190 +126,104 @@ export async function POST(req: Request) {
     )
 
   if (!transactionStatus) {
-    return createWebhookResponse(
-      'Invalid transaction status',
-      400
-    )
+    return createWebhookResponse('Invalid transaction status', 400)
   }
 
   const invoiceNumber = getText(body.order_id)
-  const midtransTransactionId = getText(
-    body.transaction_id
-  )
+  const midtransTransactionId = getText(body.transaction_id)
 
   if (!invoiceNumber && !midtransTransactionId) {
-    return createWebhookResponse(
-      'Payment reference is required',
-      400
-    )
+    return createWebhookResponse('Payment reference is required', 400)
   }
 
-  const fraudStatus = getNullableText(
-    body.fraud_status
+  const fraudStatus = getNullableText(body.fraud_status)
+  const paymentType = getNullableText(body.payment_type)
+  const statusCode = getNullableText(body.status_code)
+  const statusMessage = getNullableText(body.status_message)
+  const transactionTime = getNullableText(body.transaction_time)
+  const settlementTimeFromBody = getNullableText(
+    body.settlement_time
   )
-  const paymentType = getNullableText(
-    body.payment_type
-  )
-  const statusCode = getNullableText(
-    body.status_code
-  )
-  const statusMessage = getNullableText(
-    body.status_message
-  )
-  const transactionTime = getNullableText(
-    body.transaction_time
-  )
-  const settlementTimeFromBody =
-    getNullableText(body.settlement_time)
-  const expiryTime = getNullableText(
-    body.expiry_time
-  )
-  const rawResponse = JSON.stringify(body)
-  const grossAmount = getDecimal(
-    body.gross_amount
-  )
-
-  const connection =
-    await db.getConnection()
+  const expiryTime = getNullableText(body.expiry_time)
+  const grossAmount = getDecimal(body.gross_amount)
 
   try {
-    await connection.beginTransaction()
-    await expirePendingPayments(connection)
+    await expirePendingPayments()
 
-    const [rows] =
-      await connection.query<PaymentNotificationRow[]>(
-        `
-        SELECT
-          payments.id,
-          payments.order_id,
-          payments.transaction_id,
-          payments.amount,
-          orders.invoice_number,
-          orders.order_status
-        FROM payments
-        INNER JOIN orders
-          ON payments.order_id = orders.id
-        WHERE orders.invoice_number = ?
-          OR payments.transaction_id = ?
-        LIMIT 1
-        FOR UPDATE
-        `,
-        [
-          invoiceNumber,
-          midtransTransactionId,
-        ]
-      )
+    const found = await findPayment(
+      invoiceNumber,
+      midtransTransactionId
+    )
 
-    const payment = rows[0]
-
-    if (!payment) {
-      await connection.rollback()
-      return createWebhookResponse(
-        'Payment not found',
-        404
-      )
+    if (!found) {
+      return createWebhookResponse('Payment not found', 404)
     }
 
-    const paymentStatus =
-      getPaymentStatusFromMidtrans(
-        transactionStatus,
-        fraudStatus
-      )
+    const { payment, order } = found
+    const paymentStatus = getPaymentStatusFromMidtrans(
+      transactionStatus,
+      fraudStatus
+    )
     const orderState = getOrderStateForPayment(
       paymentStatus,
-      payment.order_status
+      order.order_status
     )
     const settlementTime =
       paymentStatus === 'paid'
-        ? settlementTimeFromBody || new Date()
+        ? settlementTimeFromBody || new Date().toISOString()
         : null
     const paidAt =
-      paymentStatus === 'paid'
-        ? settlementTime
-        : null
+      paymentStatus === 'paid' ? settlementTime : null
     const logTransactionId =
       midtransTransactionId ||
       payment.transaction_id ||
-      invoiceNumber
+      order.invoice_number
 
-    await connection.query(
-      `
-      UPDATE payments
-      SET
-        payment_type = COALESCE(?, payment_type),
-        transaction_id = COALESCE(?, transaction_id),
-        transaction_time = COALESCE(?, transaction_time),
-        settlement_time = ?,
-        expiry_time = COALESCE(?, expiry_time),
-        raw_response = ?,
-        transaction_status = ?,
-        paid_at = ?
-      WHERE id = ?
-      `,
-      [
-        paymentType,
-        midtransTransactionId || null,
-        transactionTime,
-        settlementTime,
-        expiryTime,
-        rawResponse,
-        transactionStatus,
-        paidAt,
-        payment.id,
-      ]
-    )
+    const { error: paymentError } = await db
+      .from('payments')
+      .update({
+        payment_type: paymentType || payment.payment_type,
+        transaction_id:
+          midtransTransactionId || payment.transaction_id,
+        transaction_time: transactionTime || undefined,
+        settlement_time: settlementTime,
+        expiry_time: expiryTime || undefined,
+        raw_response: body,
+        transaction_status: transactionStatus,
+        paid_at: paidAt,
+      })
+      .eq('id', payment.id)
 
-    await connection.query(
-      `
-      UPDATE orders
-      SET
-        payment_status = ?,
-        order_status = ?,
-        paid_at = ?
-      WHERE id = ?
-      `,
-      [
-        orderState.paymentStatus,
-        orderState.orderStatus,
-        paidAt,
-        payment.order_id,
-      ]
-    )
+    if (paymentError) throw paymentError
 
-    await connection.query(
-      `
-      INSERT INTO payment_logs
-      (
-        payment_id,
-        transaction_id,
-        order_id,
-        transaction_status,
-        payment_type,
-        fraud_status,
-        status_code,
-        status_message,
-        gross_amount,
-        currency,
-        raw_response
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        payment.id,
-        logTransactionId,
-        payment.order_id,
-        transactionStatus,
-        paymentType,
-        fraudStatus,
-        statusCode,
-        statusMessage,
-        grossAmount || payment.amount,
-        getText(body.currency) || 'IDR',
-        rawResponse,
-      ]
-    )
+    const { error: orderError } = await db
+      .from('orders')
+      .update({
+        payment_status: orderState.paymentStatus,
+        order_status: orderState.orderStatus,
+        paid_at: paidAt,
+      })
+      .eq('id', payment.order_id)
 
-    await connection.commit()
+    if (orderError) throw orderError
+
+    const { error: logError } = await db
+      .from('payment_logs')
+      .insert({
+        payment_id: payment.id,
+        transaction_id: logTransactionId,
+        order_id: payment.order_id,
+        transaction_status: transactionStatus,
+        payment_type: paymentType,
+        fraud_status: fraudStatus,
+        status_code: statusCode,
+        status_message: statusMessage,
+        gross_amount: grossAmount ?? payment.amount,
+        currency: getText(body.currency) || 'IDR',
+        raw_response: body,
+      })
+
+    if (logError) throw logError
 
     return NextResponse.json({
       message: 'Webhook processed',
@@ -283,18 +240,8 @@ export async function POST(req: Request) {
       },
     })
   } catch (error) {
-    await connection.rollback()
+    console.error('MIDTRANS WEBHOOK ERROR:', error)
 
-    console.error(
-      'MIDTRANS WEBHOOK ERROR:',
-      error
-    )
-
-    return createWebhookResponse(
-      'Failed to process webhook',
-      500
-    )
-  } finally {
-    connection.release()
+    return createWebhookResponse('Failed to process webhook', 500)
   }
 }

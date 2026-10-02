@@ -28,21 +28,18 @@ export async function POST(req: Request) {
       )
     }
 
-    const [rows]: any =
-      await db.query(
-        `
-        SELECT *
-        FROM users
-        WHERE email = ?
-      `,
-        [
-          email
-            .trim()
-            .toLowerCase(),
-        ]
+    const { data: rows, error } = await db
+      .from('users')
+      .select('*')
+      .eq(
+        'email',
+        email.trim().toLowerCase()
       )
+      .limit(1)
 
-    if (rows.length === 0) {
+    if (error) throw error
+
+    if ((rows || []).length === 0) {
       return NextResponse.json(
         {
           success: false,

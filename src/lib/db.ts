@@ -1,11 +1,25 @@
-import mysql from 'mysql2/promise'
+import { createClient } from '@supabase/supabase-js'
 
-export const db = mysql.createPool({
-  host: process.env.MYSQL_HOST || 'localhost',
-  port: Number(process.env.MYSQL_PORT || 3306),
-  user: process.env.MYSQL_USER || 'root',
-  password: process.env.MYSQL_PASSWORD || '',
-  database: process.env.MYSQL_DATABASE || 'mroeybakery',
-  waitForConnections: true,
-  connectionLimit: 10,
-})
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabasePublishableKey =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+
+if (!supabaseUrl || !supabasePublishableKey) {
+  throw new Error(
+    'Supabase environment variables are not configured.'
+  )
+}
+
+// API routes still use the application's existing JWT authentication.
+// They do not need a browser-persisted Supabase Auth session.
+export const db = createClient(
+  supabaseUrl,
+  supabasePublishableKey,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)

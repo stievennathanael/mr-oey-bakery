@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import type { ResultSetHeader } from 'mysql2'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
 import {
@@ -16,11 +15,19 @@ import {
 } from '@/lib/midtrans'
 
 type CartCheckoutRow = {
+  id: number
   product_id: number
   quantity: number
-  product_name: string
-  product_price: string | number
-  subtotal: string | number
+  products:
+    | {
+        product_name: string
+        product_price: string | number
+      }
+    | Array<{
+        product_name: string
+        product_price: string | number
+      }>
+    | null
 }
 
 type UserCheckoutRow = {
@@ -62,23 +69,15 @@ export async function POST(req: Request) {
 
   if (!user) {
     return NextResponse.json(
-      {
-        message: 'Unauthorized',
-      },
-      {
-        status: 401,
-      }
+      { message: 'Unauthorized' },
+      { status: 401 }
     )
   }
 
   if (user.role !== 'customer') {
     return NextResponse.json(
-      {
-        message: 'Only customers can checkout',
-      },
-      {
-        status: 403,
-      }
+      { message: 'Only customers can checkout' },
+      { status: 403 }
     )
   }
 
@@ -88,14 +87,11 @@ export async function POST(req: Request) {
         message:
           'Midtrans belum dikonfigurasi lengkap. Isi MIDTRANS_SERVER_KEY dan MIDTRANS_CLIENT_KEY terlebih dahulu.',
       },
-      {
-        status: 503,
-      }
+      { status: 503 }
     )
   }
 
-  const connection =
-    await db.getConnection()
+  let createdOrderId: number | null = null
 
   try {
     const body = await req.json()
@@ -113,34 +109,25 @@ export async function POST(req: Request) {
       String(rawLocationId).trim() === ''
 
     if (locationIsEmpty) {
-      const [pickupLocationRows] =
-        await connection.query(
-          `
-          SELECT id
-          FROM locations
-          ORDER BY id ASC
-          LIMIT 2
-          `
-        )
+      const { data, error } = await db
+        .from('locations')
+        .select('id')
+        .order('id', { ascending: true })
+        .limit(2)
 
-      const pickupLocations =
-        pickupLocationRows as Array<{
-          id: number
-        }>
+      if (error) throw error
 
-      if (pickupLocations.length === 1) {
-        locationId = pickupLocations[0].id
+      if (data.length === 1) {
+        locationId = data[0].id
       } else {
         return NextResponse.json(
           {
             message:
-              pickupLocations.length === 0
+              data.length === 0
                 ? 'Lokasi pickup belum tersedia.'
                 : 'Silakan pilih lokasi pickup terlebih dahulu.',
           },
-          {
-            status: 400,
-          }
+          { status: 400 }
         )
       }
     } else if (
@@ -148,12 +135,8 @@ export async function POST(req: Request) {
       locationId <= 0
     ) {
       return NextResponse.json(
-        {
-          message: 'Invalid location',
-        },
-        {
-          status: 400,
-        }
+        { message: 'Invalid location' },
+        { status: 400 }
       )
     }
 
@@ -163,226 +146,173 @@ export async function POST(req: Request) {
           message:
             'Metode pembayaran hanya tersedia melalui Midtrans.',
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       )
     }
 
-    const [locationRows] =
-      await connection.query(
-        `
-        SELECT id
-        FROM locations
-        WHERE id = ?
-        LIMIT 1
-        `,
-        [locationId]
-      )
+    const { data: location, error: locationError } =
+      await db
+        .from('locations')
+        .select('id')
+        .eq('id', locationId)
+        .maybeSingle()
 
-    if (
-      (
-        locationRows as Array<{
-          id: number
-        }>
-      ).length === 0
-    ) {
+    if (locationError) throw locationError
+
+    if (!location) {
       return NextResponse.json(
-        {
-          message: 'Lokasi pickup tidak ditemukan.',
-        },
-        {
-          status: 400,
-        }
+        { message: 'Lokasi pickup tidak ditemukan.' },
+        { status: 400 }
       )
     }
 
-    const [userRows] =
-      await connection.query(
-        `
-        SELECT name, email, phone
-        FROM users
-        WHERE id = ?
-        LIMIT 1
-        `,
-        [user.id]
-      )
+    const { data: customer, error: customerError } =
+      await db
+        .from('users')
+        .select('name, email, phone')
+        .eq('id', user.id)
+        .maybeSingle()
 
-    const customer =
-      (userRows as UserCheckoutRow[])[0]
+    if (customerError) throw customerError
 
     if (!customer) {
       return NextResponse.json(
-        {
-          message: 'Customer tidak ditemukan.',
-        },
-        {
-          status: 404,
-        }
+        { message: 'Customer tidak ditemukan.' },
+        { status: 404 }
       )
     }
 
-    await connection.beginTransaction()
-
-    const [cartRows] =
-      await connection.query(
+    const { data: cartRows, error: cartError } = await db
+      .from('carts')
+      .select(
         `
-        SELECT
-          carts.product_id,
-          carts.quantity,
-          products.product_name,
-          products.product_price,
-          carts.quantity * products.product_price as subtotal
-        FROM carts
-        INNER JOIN products
-          ON carts.product_id = products.id
-        WHERE carts.user_id = ?
-        ORDER BY carts.created_at ASC
-        FOR UPDATE
-        `,
-        [user.id]
+          id,
+          product_id,
+          quantity,
+          products!inner (product_name, product_price)
+        `
       )
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
 
-    const items =
-      cartRows as CartCheckoutRow[]
+    if (cartError) throw cartError
+
+    const cartItems = (cartRows || []) as CartCheckoutRow[]
+    const items = cartItems.map((item) => {
+      const product = Array.isArray(item.products)
+        ? item.products[0]
+        : item.products
+
+      if (!product) {
+        throw new Error('Cart product is missing')
+      }
+
+      const productPrice = Number(product.product_price)
+
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        quantity: Number(item.quantity),
+        product_name: product.product_name,
+        product_price: productPrice,
+        subtotal: Number(item.quantity) * productPrice,
+      }
+    })
 
     if (items.length === 0) {
-      await connection.rollback()
-
       return NextResponse.json(
-        {
-          message: 'Cart is empty',
-        },
-        {
-          status: 400,
-        }
+        { message: 'Cart is empty' },
+        { status: 400 }
       )
     }
 
     const totalPrice = items.reduce(
-      (sum, item) =>
-        sum + Number(item.subtotal),
+      (sum, item) => sum + item.subtotal,
       0
     )
+    const invoiceNumber = createInvoiceNumber(user.id)
+    const paymentExpiryDate = createPaymentExpiryDate()
+    const snapPayment = await createMidtransSnapTransaction({
+      invoiceNumber,
+      amount: totalPrice,
+      customer: customer as UserCheckoutRow,
+      items: items.map((item) => ({
+        id: item.product_id,
+        name: item.product_name,
+        price: item.product_price,
+        quantity: item.quantity,
+      })),
+    })
 
-    const invoiceNumber =
-      createInvoiceNumber(user.id)
-
-    const [orderResult] =
-      await connection.query<ResultSetHeader>(
-        `
-        INSERT INTO orders
-        (
-          user_id,
-          customer_name,
-          customer_email,
-          customer_phone,
-          location_id,
-          invoice_number,
-          total_price,
-          payment_method,
-          payment_status,
-          order_status
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'waiting_payment')
-        `,
-        [
-          user.id,
-          customer.name,
-          customer.email,
-          customer.phone,
-          locationId,
-          invoiceNumber,
-          totalPrice,
-          paymentMethod,
-        ]
-      )
-
-    const orderId = orderResult.insertId
-
-    for (const item of items) {
-      await connection.query(
-        `
-        INSERT INTO order_items
-        (
-          order_id,
-          product_id,
-          quantity,
-          product_name,
-          product_price,
-          subtotal
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          orderId,
-          item.product_id,
-          item.quantity,
-          item.product_name,
-          item.product_price,
-          item.subtotal,
-        ]
-      )
-    }
-
-    const paymentExpiryDate =
-      createPaymentExpiryDate()
-    const snapPayment =
-      await createMidtransSnapTransaction({
-        invoiceNumber,
-        amount: totalPrice,
-        customer,
-        items: items.map((item) => ({
-          id: item.product_id,
-          name: item.product_name,
-          price: Number(item.product_price),
-          quantity: Number(item.quantity),
-        })),
+    const { data: order, error: orderError } = await db
+      .from('orders')
+      .insert({
+        user_id: user.id,
+        customer_name: customer.name,
+        customer_email: customer.email,
+        customer_phone: customer.phone,
+        location_id: locationId,
+        invoice_number: invoiceNumber,
+        total_price: totalPrice,
+        payment_method: paymentMethod,
+        payment_status: 'unpaid',
+        order_status: 'waiting_payment',
       })
+      .select('id')
+      .single()
 
-    const [paymentResult] =
-      await connection.query<ResultSetHeader>(
-        `
-        INSERT INTO payments
-        (
-          order_id,
-          payment_provider,
-          snap_token,
-          payment_url,
-          amount,
-          expiry_time,
-          raw_response,
-          transaction_status
-        )
-        VALUES (?, 'Midtrans', ?, ?, ?, ?, ?, 'pending')
-        `,
-        [
-          orderId,
-          snapPayment.token,
-          snapPayment.redirectUrl,
-          totalPrice,
-          paymentExpiryDate,
-          JSON.stringify(
-            snapPayment.rawResponse
-          ),
-        ]
+    if (orderError) throw orderError
+
+    createdOrderId = order.id
+
+    const { error: itemsError } = await db
+      .from('order_items')
+      .insert(
+        items.map((item) => ({
+          order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          product_name: item.product_name,
+          product_price: item.product_price,
+          subtotal: item.subtotal,
+        }))
       )
 
-    await connection.query(
-      'DELETE FROM carts WHERE user_id = ?',
-      [user.id]
-    )
+    if (itemsError) throw itemsError
 
-    await connection.commit()
+    const { data: payment, error: paymentError } = await db
+      .from('payments')
+      .insert({
+        order_id: order.id,
+        payment_provider: 'Midtrans',
+        snap_token: snapPayment.token,
+        payment_url: snapPayment.redirectUrl,
+        amount: totalPrice,
+        expiry_time: paymentExpiryDate.toISOString(),
+        raw_response: snapPayment.rawResponse,
+        transaction_status: 'pending',
+      })
+      .select('id')
+      .single()
 
-    const paymentId =
-      paymentResult.insertId
+    if (paymentError) throw paymentError
+
+    const { error: clearCartError } = await db
+      .from('carts')
+      .delete()
+      .in(
+        'id',
+        items.map((item) => item.id)
+      )
+      .eq('user_id', user.id)
+
+    if (clearCartError) throw clearCartError
 
     return NextResponse.json(
       {
         message: 'Checkout created',
         order: {
-          id: orderId,
+          id: order.id,
           invoice_number: invoiceNumber,
           total_price: totalPrice,
           payment_method: paymentMethod,
@@ -391,7 +321,7 @@ export async function POST(req: Request) {
         },
         items,
         payment: {
-          id: paymentId,
+          id: payment.id,
           payment_provider: 'Midtrans',
           snap_token: snapPayment.token,
           payment_url: snapPayment.redirectUrl,
@@ -405,20 +335,29 @@ export async function POST(req: Request) {
           snap_js_url: getMidtransSnapJsUrl(),
         },
       },
-      {
-        status: 201,
-      }
+      { status: 201 }
     )
   } catch (error) {
-    await connection.rollback()
+    if (createdOrderId) {
+      const { error: cleanupError } = await db
+        .from('orders')
+        .delete()
+        .eq('id', createdOrderId)
+
+      if (cleanupError) {
+        console.error(
+          'CHECKOUT CLEANUP ERROR:',
+          cleanupError
+        )
+      }
+    }
 
     console.error('CHECKOUT ERROR:', error)
 
     return NextResponse.json(
       {
         message:
-          error instanceof
-            MidtransConfigurationError ||
+          error instanceof MidtransConfigurationError ||
           error instanceof MidtransApiError
             ? error.message
             : 'Failed to checkout',
@@ -427,13 +366,10 @@ export async function POST(req: Request) {
         status:
           error instanceof MidtransApiError
             ? error.statusCode
-            : error instanceof
-              MidtransConfigurationError
-            ? 503
-            : 500,
+            : error instanceof MidtransConfigurationError
+              ? 503
+              : 500,
       }
     )
-  } finally {
-    connection.release()
   }
 }

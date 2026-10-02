@@ -103,17 +103,16 @@ export async function POST(req: Request) {
     // ==========================
     // CEK EMAIL SUDAH ADA
     // ==========================
-    const [existing]: any =
-      await db.query(
-        `
-        SELECT id
-        FROM users
-        WHERE email = ?
-      `,
-        [email.trim().toLowerCase()]
-      )
+    const { data: existing, error: lookupError } =
+      await db
+        .from('users')
+        .select('id')
+        .eq('email', email.trim().toLowerCase())
+        .limit(1)
 
-    if (existing.length > 0) {
+    if (lookupError) throw lookupError
+
+    if ((existing || []).length > 0) {
       return NextResponse.json(
         {
           success: false,
@@ -135,34 +134,27 @@ export async function POST(req: Request) {
     // ==========================
     // INSERT USER CUSTOMER
     // ==========================
-    const [result]: any =
-      await db.query(
-        `
-        INSERT INTO users
-        (
-          name,
-          email,
-          phone,
-          password,
-          role
-        )
-        VALUES
-        (?, ?, ?, ?, 'customer')
-      `,
-        [
-          name.trim(),
-          email.trim().toLowerCase(),
-          phone.trim(),
-          hashedPassword,
-        ]
-      )
+    const { data: newUser, error: insertError } =
+      await db
+        .from('users')
+        .insert({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          phone: phone.trim(),
+          password: hashedPassword,
+          role: 'customer',
+        })
+        .select('id')
+        .single()
+
+    if (insertError) throw insertError
 
     return NextResponse.json(
       {
         success: true,
         message:
           'Registration successful',
-        userId: result.insertId,
+        userId: newUser.id,
       },
       {
         status: 201,

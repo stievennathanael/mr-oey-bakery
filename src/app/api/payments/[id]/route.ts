@@ -19,9 +19,7 @@ import {
 import { syncPaymentWithMidtrans } from '@/lib/midtrans-sync'
 
 type Params = {
-  params: Promise<{
-    id: string
-  }>
+  params: Promise<{ id: string }>
 }
 
 type PaymentDetailRow = {
@@ -32,7 +30,7 @@ type PaymentDetailRow = {
   transaction_id: string | null
   snap_token: string | null
   payment_url: string | null
-  amount: number
+  amount: string | number
   transaction_status: string
   settlement_time: string | null
   paid_at: string | null
@@ -44,35 +42,41 @@ type PaymentDetailRow = {
 }
 
 async function getPaymentDetail(paymentId: number) {
-  const [rows] = await db.query(
-    `
-    SELECT
-      payments.id,
-      payments.order_id,
-      payments.payment_provider,
-      payments.payment_type,
-      payments.transaction_id,
-      payments.snap_token,
-      payments.payment_url,
-      payments.amount,
-      payments.transaction_status,
-      payments.settlement_time,
-      payments.paid_at,
-      payments.expiry_time,
-      payments.created_at,
-      orders.user_id,
-      orders.payment_status,
-      orders.order_status
-    FROM payments
-    INNER JOIN orders
-      ON payments.order_id = orders.id
-    WHERE payments.id = ?
-    LIMIT 1
-    `,
-    [paymentId]
-  )
+  const { data: payment, error: paymentError } = await db
+    .from('payments')
+    .select(
+      `
+        id,
+        order_id,
+        payment_provider,
+        payment_type,
+        transaction_id,
+        snap_token,
+        payment_url,
+        amount,
+        transaction_status,
+        settlement_time,
+        paid_at,
+        expiry_time,
+        created_at
+      `
+    )
+    .eq('id', paymentId)
+    .maybeSingle()
 
-  return (rows as PaymentDetailRow[])[0] || null
+  if (paymentError) throw paymentError
+  if (!payment) return null
+
+  const { data: order, error: orderError } = await db
+    .from('orders')
+    .select('user_id, payment_status, order_status')
+    .eq('id', payment.order_id)
+    .maybeSingle()
+
+  if (orderError) throw orderError
+  if (!order) return null
+
+  return { ...payment, ...order } as PaymentDetailRow
 }
 
 export async function PATCH(
@@ -81,110 +85,60 @@ export async function PATCH(
 ) {
   const user = getAuthUser(req)
 
-  if (!user) {
+  if (!user || !isAdmin(user)) {
     return NextResponse.json(
-      {
-        message: 'Unauthorized',
-      },
-      {
-        status: 401,
-      }
+      { message: 'Forbidden' },
+      { status: user ? 403 : 401 }
     )
   }
-
-  if (!isAdmin(user)) {
-    return NextResponse.json(
-      {
-        message:
-          'Payment status can only be updated by admin.',
-      },
-      {
-        status: 403,
-      }
-    )
-  }
-
-  const connection =
-    await db.getConnection()
 
   try {
     const { id } = await params
     const paymentId = Number(id)
     const body = await req.json()
-    const status = String(
-      body.status || 'paid'
-    )
+    const status = String(body.status || 'paid')
       .trim()
       .toLowerCase()
 
-    if (
-      !Number.isInteger(paymentId) ||
-      paymentId <= 0
-    ) {
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
       return NextResponse.json(
-        {
-          message: 'Invalid payment',
-        },
-        {
-          status: 400,
-        }
+        { message: 'Invalid payment' },
+        { status: 400 }
       )
     }
 
     if (!isPaymentStatus(status)) {
       return NextResponse.json(
-        {
-          message: 'Invalid payment status',
-        },
-        {
-          status: 400,
-        }
+        { message: 'Invalid payment status' },
+        { status: 400 }
       )
     }
 
-    await expirePendingPayments(connection)
-    await connection.beginTransaction()
+    await expirePendingPayments()
 
     const result = await updatePaymentStatus(
-      connection,
-      {
-        paymentId,
-      },
+      { paymentId },
       status
     )
-
-    await connection.commit()
 
     return NextResponse.json({
       message: 'Payment updated',
       ...result,
     })
   } catch (error) {
-    await connection.rollback()
-
     if (error instanceof PaymentStatusError) {
       return NextResponse.json(
-        {
-          message: error.message,
-        },
-        {
-          status: error.statusCode,
-        }
+        { message: error.message },
+        { status: error.statusCode }
       )
     }
 
     console.error('UPDATE PAYMENT ERROR:', error)
 
     return NextResponse.json(
-      {
-        message: 'Failed to update payment',
-      },
-      {
-        status: 500,
-      }
+      { message: 'Failed to update payment' },
+      { status: 500 }
     )
-  } finally {
-    connection.release()
   }
 }
 
@@ -196,12 +150,8 @@ export async function GET(
 
   if (!user) {
     return NextResponse.json(
-      {
-        message: 'Unauthorized',
-      },
-      {
-        status: 401,
-      }
+      { message: 'Unauthorized' },
+      { status: 401 }
     )
   }
 
@@ -209,52 +159,32 @@ export async function GET(
     const { id } = await params
     const paymentId = Number(id)
 
-    if (
-      !Number.isInteger(paymentId) ||
-      paymentId <= 0
-    ) {
+    if (!Number.isInteger(paymentId) || paymentId <= 0) {
       return NextResponse.json(
-        {
-          message: 'Invalid payment',
-        },
-        {
-          status: 400,
-        }
+        { message: 'Invalid payment' },
+        { status: 400 }
       )
     }
 
-    let payment =
-      await getPaymentDetail(paymentId)
+    let payment = await getPaymentDetail(paymentId)
 
     if (!payment) {
       return NextResponse.json(
-        {
-          message: 'Payment not found',
-        },
-        {
-          status: 404,
-        }
+        { message: 'Payment not found' },
+        { status: 404 }
       )
     }
 
-    if (
-      !isAdmin(user) &&
-      payment.user_id !== user.id
-    ) {
+    if (!isAdmin(user) && payment.user_id !== user.id) {
       return NextResponse.json(
-        {
-          message: 'Forbidden',
-        },
-        {
-          status: 403,
-        }
+        { message: 'Forbidden' },
+        { status: 403 }
       )
     }
 
     if (
       payment.payment_provider === 'Midtrans' &&
-      (payment.transaction_status ===
-        'pending' ||
+      (payment.transaction_status === 'pending' ||
         payment.payment_status === 'unpaid' ||
         payment.payment_status === 'pending')
     ) {
@@ -262,9 +192,7 @@ export async function GET(
     }
 
     await expirePendingPayments()
-    payment =
-      (await getPaymentDetail(paymentId)) ||
-      payment
+    payment = (await getPaymentDetail(paymentId)) || payment
 
     const status = getPaymentStatusFromMidtrans(
       payment.transaction_status
@@ -274,29 +202,23 @@ export async function GET(
       payment: {
         id: payment.id,
         order_id: payment.order_id,
-        payment_provider:
-          payment.payment_provider,
+        payment_provider: payment.payment_provider,
         payment_type: payment.payment_type,
         transaction_id: payment.transaction_id,
         snap_token: payment.snap_token,
         payment_url: payment.payment_url,
         amount: Number(payment.amount),
         status,
-        transaction_status:
-          payment.transaction_status,
-        settlement_time:
-          payment.settlement_time,
+        transaction_status: payment.transaction_status,
+        settlement_time: payment.settlement_time,
         paid_at: payment.paid_at,
-        expires_at: getPaymentExpiresAt(
-          payment.expiry_time
-        ),
+        expires_at: getPaymentExpiresAt(payment.expiry_time),
         client_key: getMidtransClientKey(),
         snap_js_url: getMidtransSnapJsUrl(),
       },
       order: {
         id: payment.order_id,
-        payment_status:
-          payment.payment_status,
+        payment_status: payment.payment_status,
         order_status: payment.order_status,
       },
     })
@@ -304,12 +226,8 @@ export async function GET(
     console.error('GET PAYMENT ERROR:', error)
 
     return NextResponse.json(
-      {
-        message: 'Failed to fetch payment',
-      },
-      {
-        status: 500,
-      }
+      { message: 'Failed to fetch payment' },
+      { status: 500 }
     )
   }
 }

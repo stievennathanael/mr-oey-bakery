@@ -41,19 +41,19 @@ export async function PUT(
 
     const body = await request.json()
 
-    await db.query(
-      `
-      UPDATE categories
-      SET name = ?
-      WHERE id = ?
-      `,
-      [body.name, id]
-    )
+    const { error } = await db
+      .from('categories')
+      .update({ name: body.name })
+      .eq('id', Number(id))
+
+    if (error) throw error
 
     return NextResponse.json({
       message: 'Category updated',
     })
   } catch (error) {
+    console.error('UPDATE CATEGORY ERROR:', error)
+
     return NextResponse.json(
       { error: 'Failed to update category' },
       { status: 500 }
@@ -72,18 +72,19 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    await db.query(
-      `
-      DELETE FROM categories
-      WHERE id = ?
-      `,
-      [id]
-    )
+    const { error } = await db
+      .from('categories')
+      .delete()
+      .eq('id', Number(id))
+
+    if (error) throw error
 
     return NextResponse.json({
       message: 'Category deleted',
     })
   } catch (error) {
+    console.error('DELETE CATEGORY ERROR:', error)
+
     return NextResponse.json(
       { error: 'Failed to delete category' },
       { status: 500 }

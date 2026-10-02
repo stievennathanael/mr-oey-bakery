@@ -24,14 +24,17 @@ function requireAdmin(req: Request) {
 
 export async function GET() {
   try {
-    const [rows] = await db.query(`
-      SELECT *
-      FROM categories
-      ORDER BY id ASC
-    `)
+    const { data, error } = await db
+      .from('categories')
+      .select('*')
+      .order('id', { ascending: true })
 
-    return NextResponse.json(rows)
+    if (error) throw error
+
+    return NextResponse.json(data)
   } catch (error) {
+    console.error('GET CATEGORIES ERROR:', error)
+
     return NextResponse.json(
       { error: 'Failed to fetch categories' },
       { status: 500 }
@@ -49,18 +52,18 @@ export async function POST(
   try {
     const body = await request.json()
 
-    await db.query(
-      `
-      INSERT INTO categories(name)
-      VALUES(?)
-      `,
-      [body.name]
-    )
+    const { error } = await db
+      .from('categories')
+      .insert({ name: body.name })
+
+    if (error) throw error
 
     return NextResponse.json({
       message: 'Category created',
     })
   } catch (error) {
+    console.error('CREATE CATEGORY ERROR:', error)
+
     return NextResponse.json(
       { error: 'Failed to create category' },
       { status: 500 }

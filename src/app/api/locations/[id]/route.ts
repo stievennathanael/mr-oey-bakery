@@ -47,22 +47,12 @@ export async function PUT(
       map_url,
     } = body
 
-    await db.query(
-      `
-      UPDATE locations
-      SET
-        name = ?,
-        address = ?,
-        map_url = ?
-      WHERE id = ?
-      `,
-      [
-        name,
-        address,
-        map_url,
-        id,
-      ]
-    )
+    const { error } = await db
+      .from('locations')
+      .update({ name, address, map_url })
+      .eq('id', Number(id))
+
+    if (error) throw error
 
     return NextResponse.json({
       message:
@@ -94,13 +84,12 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    await db.query(
-      `
-      DELETE FROM locations
-      WHERE id = ?
-      `,
-      [id]
-    )
+    const { error } = await db
+      .from('locations')
+      .delete()
+      .eq('id', Number(id))
+
+    if (error) throw error
 
     return NextResponse.json({
       message:

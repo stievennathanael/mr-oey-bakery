@@ -11,6 +11,9 @@
   "dependencies": {
     "@next/font": "^14.2.15",
     "@react-google-maps/api": "^2.20.6",
+    "@supabase/ssr": "0.5.2",
+    "@supabase/storage-js": "2.10.4",
+    "@supabase/supabase-js": "2.55.0",
     "axios": "^1.7.9",
     "bcryptjs": "^3.0.3",
     "framer-motion": "^12.23.5",
@@ -19,7 +22,6 @@
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.20.0",
-    "mysql2": "^3.14.1",
     "next": "15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

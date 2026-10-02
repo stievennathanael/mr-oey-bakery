@@ -26,18 +26,30 @@ type OrderRow = {
   paid_at: string | null
   created_at: string
   updated_at: string
-  customer_name: string
-  customer_email: string
+  customer_name: string | null
+  customer_email: string | null
   customer_phone: string | null
-  location_name: string | null
-  payment_id: number | null
+}
+
+type UserRow = {
+  id: number
+  name: string
+  email: string
+  phone: string | null
+}
+
+type LocationRow = { id: number; name: string }
+
+type PaymentRow = {
+  id: number
+  order_id: number
   transaction_id: string | null
   payment_provider: string | null
   payment_type: string | null
-  payment_transaction_status: string | null
+  transaction_status: string | null
   payment_url: string | null
   snap_token: string | null
-  payment_expiry_time: string | Date | null
+  expiry_time: string | Date | null
 }
 
 type OrderItemRow = {
@@ -55,12 +67,8 @@ export async function GET(req: Request) {
 
   if (!user) {
     return NextResponse.json(
-      {
-        message: 'Unauthorized',
-      },
-      {
-        status: 401,
-      }
+      { message: 'Unauthorized' },
+      { status: 401 }
     )
   }
 
@@ -73,114 +81,158 @@ export async function GET(req: Request) {
     })
     await expirePendingPayments()
 
-    const params: number[] = []
-    let where = ''
+    let orderQuery = db
+      .from('orders')
+      .select(
+        `
+          id,
+          user_id,
+          location_id,
+          invoice_number,
+          total_price,
+          payment_method,
+          payment_status,
+          order_status,
+          paid_at,
+          created_at,
+          updated_at,
+          customer_name,
+          customer_email,
+          customer_phone
+        `
+      )
+      .order('created_at', { ascending: false })
 
     if (!admin) {
-      where = 'WHERE orders.user_id = ?'
-      params.push(user.id)
+      orderQuery = orderQuery.eq('user_id', user.id)
     }
 
-    const [orderRows] = await db.query(
-      `
-      SELECT
-        orders.id,
-        orders.user_id,
-        orders.location_id,
-        orders.invoice_number,
-        orders.total_price,
-        orders.payment_method,
-        orders.payment_status,
-        orders.order_status,
-        orders.paid_at,
-        orders.created_at,
-        orders.updated_at,
-        COALESCE(orders.customer_name, users.name) as customer_name,
-        COALESCE(orders.customer_email, users.email) as customer_email,
-        COALESCE(orders.customer_phone, users.phone) as customer_phone,
-        locations.name as location_name,
-        payments.id as payment_id,
-        payments.transaction_id,
-        payments.payment_provider,
-        payments.payment_type,
-        payments.transaction_status as payment_transaction_status,
-        payments.payment_url,
-        payments.snap_token,
-        payments.expiry_time as payment_expiry_time
-      FROM orders
-      INNER JOIN users
-        ON orders.user_id = users.id
-      LEFT JOIN locations
-        ON orders.location_id = locations.id
-      LEFT JOIN payments
-        ON payments.order_id = orders.id
-      ${where}
-      ORDER BY orders.created_at DESC
-      `,
-      params
-    )
+    const { data: orderRows, error: ordersError } =
+      await orderQuery
 
-    const orders = orderRows as OrderRow[]
+    if (ordersError) throw ordersError
 
-    if (orders.length === 0) {
-      return NextResponse.json([])
-    }
+    const orders = (orderRows || []) as OrderRow[]
 
-    const orderIds = orders.map(
-      (order) => order.id
-    )
+    if (!orders.length) return NextResponse.json([])
 
-    const placeholders = orderIds
-      .map(() => '?')
-      .join(',')
-
-    const [itemRows] = await db.query(
-      `
-      SELECT *
-      FROM order_items
-      WHERE order_id IN (${placeholders})
-      ORDER BY id ASC
-      `,
-      orderIds
-    )
-
-    const items = itemRows as OrderItemRow[]
-
-    const result = orders.map((order) => ({
-      ...order,
-      total_price: Number(order.total_price),
-      payment_expires_at: getPaymentExpiresAt(
-        order.payment_expiry_time
-      ),
-      midtrans_client_key:
-        getMidtransClientKey(),
-      midtrans_snap_js_url:
-        getMidtransSnapJsUrl(),
-      items: items
-        .filter(
-          (item) =>
-            item.order_id === order.id
+    const orderIds = orders.map((order) => order.id)
+    const userIds = [...new Set(orders.map((order) => order.user_id))]
+    const locationIds = [
+      ...new Set(
+        orders.flatMap((order) =>
+          order.location_id ? [order.location_id] : []
         )
-        .map((item) => ({
-          ...item,
-          product_price: Number(
-            item.product_price
-          ),
-          subtotal: Number(item.subtotal),
-        })),
-    }))
+      ),
+    ]
+
+    const [usersResult, locationsResult, paymentsResult, itemsResult] =
+      await Promise.all([
+        db
+          .from('users')
+          .select('id, name, email, phone')
+          .in('id', userIds),
+        locationIds.length
+          ? db
+              .from('locations')
+              .select('id, name')
+              .in('id', locationIds)
+          : Promise.resolve({ data: [], error: null }),
+        db
+          .from('payments')
+          .select(
+            `
+              id,
+              order_id,
+              transaction_id,
+              payment_provider,
+              payment_type,
+              transaction_status,
+              payment_url,
+              snap_token,
+              expiry_time
+            `
+          )
+          .in('order_id', orderIds),
+        db
+          .from('order_items')
+          .select('*')
+          .in('order_id', orderIds)
+          .order('id', { ascending: true }),
+      ])
+
+    if (usersResult.error) throw usersResult.error
+    if (locationsResult.error) throw locationsResult.error
+    if (paymentsResult.error) throw paymentsResult.error
+    if (itemsResult.error) throw itemsResult.error
+
+    const usersById = new Map(
+      ((usersResult.data || []) as UserRow[]).map((item) => [
+        item.id,
+        item,
+      ])
+    )
+    const locationsById = new Map(
+      ((locationsResult.data || []) as LocationRow[]).map(
+        (item) => [item.id, item]
+      )
+    )
+    const paymentsByOrderId = new Map(
+      ((paymentsResult.data || []) as PaymentRow[]).map(
+        (item) => [item.order_id, item]
+      )
+    )
+    const items = (itemsResult.data || []) as OrderItemRow[]
+
+    const result = orders.map((order) => {
+      const customer = usersById.get(order.user_id)
+      const location = order.location_id
+        ? locationsById.get(order.location_id)
+        : null
+      const payment = paymentsByOrderId.get(order.id)
+
+      return {
+        ...order,
+        total_price: Number(order.total_price),
+        customer_name: order.customer_name || customer?.name || null,
+        customer_email:
+          order.customer_email || customer?.email || null,
+        customer_phone:
+          order.customer_phone || customer?.phone || null,
+        location_name: location?.name || null,
+        payment_id: payment?.id || null,
+        transaction_id: payment?.transaction_id || null,
+        payment_provider:
+          payment?.payment_provider || null,
+        payment_type: payment?.payment_type || null,
+        payment_transaction_status:
+          payment?.transaction_status || null,
+        payment_url: payment?.payment_url || null,
+        snap_token: payment?.snap_token || null,
+        payment_expiry_time:
+          payment?.expiry_time || null,
+        payment_expires_at: getPaymentExpiresAt(
+          payment?.expiry_time
+        ),
+        midtrans_client_key: getMidtransClientKey(),
+        midtrans_snap_js_url: getMidtransSnapJsUrl(),
+        items: items
+          .filter((item) => item.order_id === order.id)
+          .map((item) => ({
+            ...item,
+            product_price: Number(item.product_price),
+            subtotal: Number(item.subtotal),
+          })),
+      }
+    })
 
     return NextResponse.json(result)
   } catch (error) {
     console.error('GET ORDERS ERROR:', error)
 
     return NextResponse.json(
-      {
-        message: 'Failed to fetch orders',
-      },
-      {
-        status: 500,
-      }
+      { message: 'Failed to fetch orders' },
+      { status: 500 }
     )
   }
 }

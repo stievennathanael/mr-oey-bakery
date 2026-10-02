@@ -1,11 +1,3 @@
-import type {
-  ResultSetHeader,
-  RowDataPacket,
-} from 'mysql2'
-import type {
-  Pool,
-  PoolConnection,
-} from 'mysql2/promise'
 import { db } from '@/lib/db'
 import type { MidtransTransactionStatus } from '@/lib/midtrans'
 
@@ -26,13 +18,12 @@ export type PaymentReference = {
   invoiceNumber?: string
 }
 
-type Queryable = Pool | PoolConnection
-
-type PaymentRow = RowDataPacket & {
+type PaymentRow = {
   id: number
   order_id: number
   transaction_status: string
-  order_status: string
+  settlement_time: string | null
+  paid_at: string | null
 }
 
 const DEFAULT_PAYMENT_EXPIRY_MINUTES = 15
@@ -40,10 +31,7 @@ const DEFAULT_PAYMENT_EXPIRY_MINUTES = 15
 export class PaymentStatusError extends Error {
   statusCode: number
 
-  constructor(
-    message: string,
-    statusCode = 400
-  ) {
+  constructor(message: string, statusCode = 400) {
     super(message)
     this.name = 'PaymentStatusError'
     this.statusCode = statusCode
@@ -56,10 +44,7 @@ export function getPaymentExpiryMinutes() {
       DEFAULT_PAYMENT_EXPIRY_MINUTES
   )
 
-  if (
-    !Number.isFinite(minutes) ||
-    minutes <= 0
-  ) {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
     return DEFAULT_PAYMENT_EXPIRY_MINUTES
   }
 
@@ -69,23 +54,16 @@ export function getPaymentExpiryMinutes() {
 export function getPaymentExpiresAt(
   value: string | Date | null | undefined
 ) {
-  if (!value) {
-    return null
-  }
+  if (!value) return null
 
-  const date =
-    value instanceof Date ? value : new Date(value)
+  const date = value instanceof Date ? value : new Date(value)
 
-  if (Number.isNaN(date.getTime())) {
-    return null
-  }
-
-  return date.toISOString()
+  return Number.isNaN(date.getTime())
+    ? null
+    : date.toISOString()
 }
 
-export function createPaymentExpiryDate(
-  from = new Date()
-) {
+export function createPaymentExpiryDate(from = new Date()) {
   return new Date(
     from.getTime() +
       getPaymentExpiryMinutes() * 60 * 1000
@@ -95,9 +73,7 @@ export function createPaymentExpiryDate(
 export function isPaymentStatus(
   status: string
 ): status is PaymentStatus {
-  return paymentStatuses.includes(
-    status as PaymentStatus
-  )
+  return paymentStatuses.includes(status as PaymentStatus)
 }
 
 export function normalizePaymentStatus(
@@ -107,10 +83,7 @@ export function normalizePaymentStatus(
     .trim()
     .toLowerCase()
 
-  const aliases: Record<
-    string,
-    PaymentStatus
-  > = {
+  const aliases: Record<string, PaymentStatus> = {
     pending: 'pending',
     unpaid: 'pending',
     waiting: 'pending',
@@ -147,43 +120,28 @@ export function getPaymentStatusFromMidtrans(
     | undefined,
   fraudStatus?: string | null
 ): PaymentStatus {
-  const status = String(
-    transactionStatus || 'pending'
-  )
+  const status = String(transactionStatus || 'pending')
     .trim()
     .toLowerCase()
   const fraud = String(fraudStatus || '')
     .trim()
     .toLowerCase()
 
-  if (status === 'settlement') {
-    return 'paid'
-  }
+  if (status === 'settlement') return 'paid'
 
   if (status === 'capture') {
-    if (fraud === 'challenge') {
-      return 'pending'
-    }
+    if (fraud === 'challenge') return 'pending'
 
-    return fraud === 'deny'
-      ? 'failed'
-      : 'paid'
+    return fraud === 'deny' ? 'failed' : 'paid'
   }
 
-  if (status === 'expire') {
-    return 'expired'
-  }
+  if (status === 'expire') return 'expired'
 
-  if (
-    status === 'deny' ||
-    status === 'failure'
-  ) {
+  if (status === 'deny' || status === 'failure') {
     return 'failed'
   }
 
-  if (status === 'cancel') {
-    return 'cancelled'
-  }
+  if (status === 'cancel') return 'cancelled'
 
   return 'pending'
 }
@@ -191,21 +149,10 @@ export function getPaymentStatusFromMidtrans(
 function getMidtransStatusForPayment(
   paymentStatus: PaymentStatus
 ): MidtransTransactionStatus {
-  if (paymentStatus === 'paid') {
-    return 'settlement'
-  }
-
-  if (paymentStatus === 'failed') {
-    return 'failure'
-  }
-
-  if (paymentStatus === 'expired') {
-    return 'expire'
-  }
-
-  if (paymentStatus === 'cancelled') {
-    return 'cancel'
-  }
+  if (paymentStatus === 'paid') return 'settlement'
+  if (paymentStatus === 'failed') return 'failure'
+  if (paymentStatus === 'expired') return 'expire'
+  if (paymentStatus === 'cancelled') return 'cancel'
 
   return 'pending'
 }
@@ -254,133 +201,174 @@ export function getOrderStateForPayment(
   }
 }
 
-export async function expirePendingPayments(
-  connection: Queryable = db
-) {
-  const [result] =
-    await connection.query<ResultSetHeader>(
-      `
-      UPDATE payments
-      INNER JOIN orders
-        ON payments.order_id = orders.id
-      SET
-        payments.transaction_status = 'expire',
-        payments.paid_at = NULL,
-        payments.settlement_time = NULL,
-        orders.payment_status = 'expired',
-        orders.order_status = 'cancelled',
-        orders.paid_at = NULL
-      WHERE payments.transaction_status = 'pending'
-        AND orders.payment_status IN ('unpaid', 'pending')
-        AND payments.expiry_time IS NOT NULL
-        AND payments.expiry_time <= CURRENT_TIMESTAMP
-      `
+export async function expirePendingPayments() {
+  const { data: eligibleOrders, error: orderError } = await db
+    .from('orders')
+    .select('id')
+    .in('payment_status', ['unpaid', 'pending'])
+
+  if (orderError) throw orderError
+
+  const orderIds = (eligibleOrders || []).map(
+    (order) => order.id
+  )
+
+  if (!orderIds.length) return 0
+
+  const { data: expiredPayments, error: paymentError } =
+    await db
+      .from('payments')
+      .select('id, order_id')
+      .in('order_id', orderIds)
+      .eq('transaction_status', 'pending')
+      .not('expiry_time', 'is', null)
+      .lte('expiry_time', new Date().toISOString())
+
+  if (paymentError) throw paymentError
+
+  if (!expiredPayments?.length) return 0
+
+  const { error: updatePaymentsError } = await db
+    .from('payments')
+    .update({
+      transaction_status: 'expire',
+      paid_at: null,
+      settlement_time: null,
+    })
+    .in(
+      'id',
+      expiredPayments.map((payment) => payment.id)
     )
 
-  return result.affectedRows
+  if (updatePaymentsError) throw updatePaymentsError
+
+  const { error: updateOrdersError } = await db
+    .from('orders')
+    .update({
+      payment_status: 'expired',
+      order_status: 'cancelled',
+      paid_at: null,
+    })
+    .in(
+      'id',
+      expiredPayments.map((payment) => payment.order_id)
+    )
+    .in('payment_status', ['unpaid', 'pending'])
+
+  if (updateOrdersError) throw updateOrdersError
+
+  return expiredPayments.length
 }
 
-export async function updatePaymentStatus(
-  connection: PoolConnection,
-  reference: PaymentReference,
-  status: PaymentStatus
-) {
-  const clauses: string[] = []
-  const values: Array<number | string> = []
-
+async function findPayment(reference: PaymentReference) {
   if (reference.paymentId) {
-    clauses.push('payments.id = ?')
-    values.push(reference.paymentId)
+    const { data, error } = await db
+      .from('payments')
+      .select('id, order_id, transaction_status, settlement_time, paid_at')
+      .eq('id', reference.paymentId)
+      .maybeSingle()
+
+    if (error) throw error
+
+    return data as PaymentRow | null
   }
 
   if (reference.transactionId) {
-    clauses.push('payments.transaction_id = ?')
-    values.push(reference.transactionId)
+    const { data, error } = await db
+      .from('payments')
+      .select('id, order_id, transaction_status, settlement_time, paid_at')
+      .eq('transaction_id', reference.transactionId)
+      .maybeSingle()
+
+    if (error) throw error
+
+    return data as PaymentRow | null
   }
 
   if (reference.invoiceNumber) {
-    clauses.push('orders.invoice_number = ?')
-    values.push(reference.invoiceNumber)
+    const { data: order, error: orderError } = await db
+      .from('orders')
+      .select('id')
+      .eq('invoice_number', reference.invoiceNumber)
+      .maybeSingle()
+
+    if (orderError) throw orderError
+    if (!order) return null
+
+    const { data, error } = await db
+      .from('payments')
+      .select('id, order_id, transaction_status, settlement_time, paid_at')
+      .eq('order_id', order.id)
+      .maybeSingle()
+
+    if (error) throw error
+
+    return data as PaymentRow | null
   }
 
-  if (clauses.length === 0) {
-    throw new PaymentStatusError(
-      'Payment reference is required'
-    )
-  }
+  throw new PaymentStatusError(
+    'Payment reference is required'
+  )
+}
 
-  const [rows] =
-    await connection.query<PaymentRow[]>(
-      `
-      SELECT
-        payments.id,
-        payments.order_id,
-        payments.transaction_status,
-        orders.order_status
-      FROM payments
-      INNER JOIN orders
-        ON payments.order_id = orders.id
-      WHERE ${clauses.join(' OR ')}
-      LIMIT 1
-      FOR UPDATE
-      `,
-      values
-    )
-
-  const payment = rows[0]
+export async function updatePaymentStatus(
+  reference: PaymentReference,
+  status: PaymentStatus
+) {
+  const payment = await findPayment(reference)
 
   if (!payment) {
-    throw new PaymentStatusError(
-      'Payment not found',
-      404
-    )
+    throw new PaymentStatusError('Payment not found', 404)
+  }
+
+  const { data: order, error: orderError } = await db
+    .from('orders')
+    .select('id, order_status')
+    .eq('id', payment.order_id)
+    .maybeSingle()
+
+  if (orderError) throw orderError
+
+  if (!order) {
+    throw new PaymentStatusError('Order not found', 404)
   }
 
   const orderState = getOrderStateForPayment(
     status,
-    payment.order_status
+    order.order_status
   )
-  const transactionStatus =
-    getMidtransStatusForPayment(status)
-  const paidAtSql =
+  const transactionStatus = getMidtransStatusForPayment(status)
+  const timestamp = new Date().toISOString()
+  const paidAt =
     status === 'paid'
-      ? 'COALESCE(paid_at, CURRENT_TIMESTAMP)'
-      : 'NULL'
-  const settlementSql =
+      ? payment.paid_at || timestamp
+      : null
+  const settlementTime =
     status === 'paid'
-      ? 'COALESCE(settlement_time, CURRENT_TIMESTAMP)'
-      : 'NULL'
+      ? payment.settlement_time || timestamp
+      : null
 
-  await connection.query<ResultSetHeader>(
-    `
-    UPDATE payments
-    SET
-      transaction_status = ?,
-      settlement_time = ${settlementSql},
-      paid_at = ${paidAtSql}
-    WHERE id = ?
-    `,
-    [
-      transactionStatus,
-      payment.id,
-    ]
-  )
+  const { error: paymentUpdateError } = await db
+    .from('payments')
+    .update({
+      transaction_status: transactionStatus,
+      settlement_time: settlementTime,
+      paid_at: paidAt,
+    })
+    .eq('id', payment.id)
 
-  await connection.query<ResultSetHeader>(
-    `
-    UPDATE orders
-    SET
-      payment_status = ?,
-      order_status = ?,
-      paid_at = ${paidAtSql}
-    WHERE id = ?
-    `,
-    [
-      orderState.paymentStatus,
-      orderState.orderStatus,
-      payment.order_id,
-    ]
-  )
+  if (paymentUpdateError) throw paymentUpdateError
+
+  const { error: orderUpdateError } = await db
+    .from('orders')
+    .update({
+      payment_status: orderState.paymentStatus,
+      order_status: orderState.orderStatus,
+      paid_at: paidAt,
+    })
+    .eq('id', payment.order_id)
+
+  if (orderUpdateError) throw orderUpdateError
 
   return {
     payment: {

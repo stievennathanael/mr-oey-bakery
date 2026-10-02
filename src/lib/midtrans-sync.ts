@@ -1,11 +1,3 @@
-import type {
-  ResultSetHeader,
-  RowDataPacket,
-} from 'mysql2'
-import type {
-  Pool,
-  PoolConnection,
-} from 'mysql2/promise'
 import { db } from '@/lib/db'
 import {
   getMidtransTransactionStatus,
@@ -17,9 +9,7 @@ import {
   getPaymentStatusFromMidtrans,
 } from '@/lib/payment-status'
 
-type Queryable = Pool | PoolConnection
-
-type SyncPaymentRow = RowDataPacket & {
+type SyncPaymentRow = {
   id: number
   order_id: number
   invoice_number: string
@@ -48,8 +38,7 @@ function getText(value: unknown) {
 }
 
 function getNullableText(value: unknown) {
-  const text = getText(value)
-  return text || null
+  return getText(value) || null
 }
 
 function getDecimal(value: unknown) {
@@ -58,59 +47,35 @@ function getDecimal(value: unknown) {
 }
 
 async function writePaymentLog(
-  connection: Queryable,
   payment: SyncPaymentRow,
   payload: Record<string, unknown>,
   transactionStatus: string,
-  transactionId: string | null,
-  rawResponse: string
+  transactionId: string | null
 ) {
-  try {
-    await connection.query(
-      `
-      INSERT INTO payment_logs
-      (
-        payment_id,
-        transaction_id,
-        order_id,
-        transaction_status,
-        payment_type,
-        fraud_status,
-        status_code,
-        status_message,
-        gross_amount,
-        currency,
-        raw_response
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        payment.id,
-        transactionId ||
-          payment.transaction_id ||
-          payment.invoice_number,
-        payment.order_id,
-        transactionStatus,
-        getNullableText(payload.payment_type),
-        getNullableText(payload.fraud_status),
-        getNullableText(payload.status_code),
-        getNullableText(payload.status_message),
-        getDecimal(payload.gross_amount) ??
-          payment.amount,
-        getText(payload.currency) || 'IDR',
-        rawResponse,
-      ]
-    )
-  } catch (error) {
-    console.error(
-      'MIDTRANS PAYMENT LOG ERROR:',
-      error
-    )
+  const { error } = await db.from('payment_logs').insert({
+    payment_id: payment.id,
+    transaction_id:
+      transactionId ||
+      payment.transaction_id ||
+      payment.invoice_number,
+    order_id: payment.order_id,
+    transaction_status: transactionStatus,
+    payment_type: getNullableText(payload.payment_type),
+    fraud_status: getNullableText(payload.fraud_status),
+    status_code: getNullableText(payload.status_code),
+    status_message: getNullableText(payload.status_message),
+    gross_amount:
+      getDecimal(payload.gross_amount) ?? payment.amount,
+    currency: getText(payload.currency) || 'IDR',
+    raw_response: payload,
+  })
+
+  if (error) {
+    console.error('MIDTRANS PAYMENT LOG ERROR:', error)
   }
 }
 
 async function applyMidtransStatus(
-  connection: Queryable,
   payment: SyncPaymentRow,
   payload: Record<string, unknown>
 ) {
@@ -119,32 +84,22 @@ async function applyMidtransStatus(
       payload.transaction_status
     )
 
-  if (!transactionStatus) {
-    return false
-  }
+  if (!transactionStatus) return false
 
-  const fraudStatus = getNullableText(
-    payload.fraud_status
-  )
-  const transactionId = getNullableText(
-    payload.transaction_id
-  )
-  const paymentType = getNullableText(
-    payload.payment_type
-  )
+  const fraudStatus = getNullableText(payload.fraud_status)
+  const transactionId = getNullableText(payload.transaction_id)
+  const paymentType = getNullableText(payload.payment_type)
   const transactionTime = getNullableText(
     payload.transaction_time
   )
-  const settlementTimeFromPayload =
-    getNullableText(payload.settlement_time)
-  const expiryTime = getNullableText(
-    payload.expiry_time
+  const settlementTimeFromPayload = getNullableText(
+    payload.settlement_time
   )
-  const paymentStatus =
-    getPaymentStatusFromMidtrans(
-      transactionStatus,
-      fraudStatus
-    )
+  const expiryTime = getNullableText(payload.expiry_time)
+  const paymentStatus = getPaymentStatusFromMidtrans(
+    transactionStatus,
+    fraudStatus
+  )
   const orderState = getOrderStateForPayment(
     paymentStatus,
     payment.order_status
@@ -153,213 +108,182 @@ async function applyMidtransStatus(
     paymentStatus === 'paid'
       ? settlementTimeFromPayload ||
         transactionTime ||
-        new Date()
+        new Date().toISOString()
       : null
   const settlementTime =
     paymentStatus === 'paid' ? paidAt : null
-  const rawResponse = JSON.stringify(payload)
   const hasChanged =
-    payment.transaction_status !==
-      transactionStatus ||
-    payment.payment_status !==
-      orderState.paymentStatus ||
-    payment.order_status !==
-      orderState.orderStatus ||
+    payment.transaction_status !== transactionStatus ||
+    payment.payment_status !== orderState.paymentStatus ||
+    payment.order_status !== orderState.orderStatus ||
     Boolean(
       transactionId &&
         transactionId !== payment.transaction_id
     )
 
-  await connection.query<ResultSetHeader>(
-    `
-    UPDATE payments
-    SET
-      payment_type = COALESCE(?, payment_type),
-      transaction_id = COALESCE(?, transaction_id),
-      transaction_time = COALESCE(?, transaction_time),
-      settlement_time = ?,
-      expiry_time = COALESCE(?, expiry_time),
-      raw_response = ?,
-      transaction_status = ?,
-      paid_at = ?
-    WHERE id = ?
-    `,
-    [
-      paymentType,
-      transactionId,
-      transactionTime,
-      settlementTime,
-      expiryTime,
-      rawResponse,
-      transactionStatus,
-      paidAt,
-      payment.id,
-    ]
-  )
+  const { error: paymentError } = await db
+    .from('payments')
+    .update({
+      payment_type: paymentType || undefined,
+      transaction_id:
+        transactionId || payment.transaction_id,
+      transaction_time: transactionTime || undefined,
+      settlement_time: settlementTime,
+      expiry_time: expiryTime || undefined,
+      raw_response: payload,
+      transaction_status: transactionStatus,
+      paid_at: paidAt,
+    })
+    .eq('id', payment.id)
 
-  await connection.query<ResultSetHeader>(
-    `
-    UPDATE orders
-    SET
-      payment_status = ?,
-      order_status = ?,
-      paid_at = ?
-    WHERE id = ?
-    `,
-    [
-      orderState.paymentStatus,
-      orderState.orderStatus,
-      paidAt,
-      payment.order_id,
-    ]
-  )
+  if (paymentError) throw paymentError
+
+  const { error: orderError } = await db
+    .from('orders')
+    .update({
+      payment_status: orderState.paymentStatus,
+      order_status: orderState.orderStatus,
+      paid_at: paidAt,
+    })
+    .eq('id', payment.order_id)
+
+  if (orderError) throw orderError
 
   if (hasChanged) {
     await writePaymentLog(
-      connection,
       payment,
       payload,
       transactionStatus,
-      transactionId,
-      rawResponse
+      transactionId
     )
   }
 
   return hasChanged
 }
 
-async function syncRowsWithMidtrans(
-  rows: SyncPaymentRow[],
-  connection: Queryable
-) {
+async function syncRowsWithMidtrans(rows: SyncPaymentRow[]) {
   const result: MidtransPaymentSyncResult = {
     checked: 0,
     updated: 0,
     failed: 0,
   }
 
-  if (!isMidtransServerConfigured()) {
-    return result
-  }
+  if (!isMidtransServerConfigured()) return result
 
   for (const payment of rows) {
     result.checked += 1
 
     try {
-      const payload =
-        await getMidtransTransactionStatus(
-          payment.invoice_number
-        )
-      const updated =
-        await applyMidtransStatus(
-          connection,
-          payment,
-          payload
-        )
+      const payload = await getMidtransTransactionStatus(
+        payment.invoice_number
+      )
+      const updated = await applyMidtransStatus(
+        payment,
+        payload
+      )
 
-      if (updated) {
-        result.updated += 1
-      }
+      if (updated) result.updated += 1
     } catch (error) {
       result.failed += 1
-      console.error(
-        'MIDTRANS STATUS SYNC ERROR:',
-        error
-      )
+      console.error('MIDTRANS STATUS SYNC ERROR:', error)
     }
   }
 
   return result
 }
 
-export async function syncPaymentWithMidtrans(
-  paymentId: number,
-  connection: Queryable = db
-) {
-  if (!isMidtransServerConfigured()) {
-    return {
-      checked: 0,
-      updated: 0,
-      failed: 0,
-    }
+async function getSyncPaymentRows({
+  paymentId,
+  userId,
+  limit,
+}: {
+  paymentId?: number
+  userId?: number
+  limit?: number
+}) {
+  let orderQuery = db
+    .from('orders')
+    .select(
+      'id, invoice_number, payment_status, order_status, user_id'
+    )
+    .in('payment_status', ['unpaid', 'pending'])
+
+  if (userId) {
+    orderQuery = orderQuery.eq('user_id', userId)
   }
 
-  const [rows] =
-    await connection.query<SyncPaymentRow[]>(
-      `
-      SELECT
-        payments.id,
-        payments.order_id,
-        payments.transaction_id,
-        payments.transaction_status,
-        payments.amount,
-        orders.invoice_number,
-        orders.payment_status,
-        orders.order_status
-      FROM payments
-      INNER JOIN orders
-        ON payments.order_id = orders.id
-      WHERE payments.id = ?
-        AND payments.payment_provider = 'Midtrans'
-      LIMIT 1
-      `,
-      [paymentId]
-    )
+  const { data: orders, error: orderError } = await orderQuery
 
-  return syncRowsWithMidtrans(rows, connection)
+  if (orderError) throw orderError
+
+  const orderIds = (orders || []).map((order) => order.id)
+
+  if (!orderIds.length) return []
+
+  let paymentQuery = db
+    .from('payments')
+    .select(
+      'id, order_id, transaction_id, transaction_status, amount'
+    )
+    .in('order_id', orderIds)
+    .eq('payment_provider', 'Midtrans')
+
+  if (paymentId) {
+    paymentQuery = paymentQuery.eq('id', paymentId)
+  } else {
+    paymentQuery = paymentQuery
+      .eq('transaction_status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(Math.max(1, Math.min(limit || 10, 25)))
+  }
+
+  const { data: payments, error: paymentError } =
+    await paymentQuery
+
+  if (paymentError) throw paymentError
+
+  const ordersById = new Map(
+    (orders || []).map((order) => [order.id, order])
+  )
+
+  return (payments || []).flatMap((payment) => {
+    const order = ordersById.get(payment.order_id)
+
+    if (!order) return []
+
+    return [
+      {
+        ...payment,
+        invoice_number: order.invoice_number,
+        payment_status: order.payment_status,
+        order_status: order.order_status,
+      } as SyncPaymentRow,
+    ]
+  })
+}
+
+export async function syncPaymentWithMidtrans(
+  paymentId: number
+) {
+  if (!isMidtransServerConfigured()) {
+    return { checked: 0, updated: 0, failed: 0 }
+  }
+
+  const rows = await getSyncPaymentRows({ paymentId })
+  return syncRowsWithMidtrans(rows)
 }
 
 export async function syncPendingPaymentsWithMidtrans({
   userId,
   limit = 10,
-  connection = db,
 }: {
   userId?: number
   limit?: number
-  connection?: Queryable
 } = {}) {
   if (!isMidtransServerConfigured()) {
-    return {
-      checked: 0,
-      updated: 0,
-      failed: 0,
-    }
+    return { checked: 0, updated: 0, failed: 0 }
   }
 
-  const params: Array<number | string> = []
-  let userFilter = ''
-
-  if (userId) {
-    userFilter = 'AND orders.user_id = ?'
-    params.push(userId)
-  }
-
-  params.push(Math.max(1, Math.min(limit, 25)))
-
-  const [rows] =
-    await connection.query<SyncPaymentRow[]>(
-      `
-      SELECT
-        payments.id,
-        payments.order_id,
-        payments.transaction_id,
-        payments.transaction_status,
-        payments.amount,
-        orders.invoice_number,
-        orders.payment_status,
-        orders.order_status
-      FROM payments
-      INNER JOIN orders
-        ON payments.order_id = orders.id
-      WHERE payments.payment_provider = 'Midtrans'
-        AND payments.transaction_status = 'pending'
-        AND orders.payment_status IN ('unpaid', 'pending')
-        ${userFilter}
-      ORDER BY payments.created_at DESC
-      LIMIT ?
-      `,
-      params
-    )
-
-  return syncRowsWithMidtrans(rows, connection)
+  const rows = await getSyncPaymentRows({ userId, limit })
+  return syncRowsWithMidtrans(rows)
 }

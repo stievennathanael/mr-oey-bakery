@@ -24,13 +24,14 @@ function requireAdmin(req: Request) {
 
 export async function GET() {
   try {
-    const [rows] = await db.query(`
-      SELECT *
-      FROM locations
-      ORDER BY id ASC
-    `)
+    const { data, error } = await db
+      .from('locations')
+      .select('*')
+      .order('id', { ascending: true })
 
-    return NextResponse.json(rows)
+    if (error) throw error
+
+    return NextResponse.json(data)
   } catch (error) {
     console.error(error)
 
@@ -61,21 +62,11 @@ export async function POST(
       map_url,
     } = body
 
-    await db.query(
-      `
-      INSERT INTO locations (
-        name,
-        address,
-        map_url
-      )
-      VALUES (?, ?, ?)
-      `,
-      [
-        name,
-        address,
-        map_url,
-      ]
-    )
+    const { error } = await db
+      .from('locations')
+      .insert({ name, address, map_url })
+
+    if (error) throw error
 
     return NextResponse.json({
       message:

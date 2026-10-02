@@ -53,7 +53,9 @@ export async function PUT(
     const productPrice =
       (formData.get('product_price') ||
         formData.get('price')) as string
-    const category_id = formData.get('category_id') as string
+    const categoryId = Number(
+      formData.get('category_id') || 0
+    )
     const image = formData.get('image') as File
 
     let imagePath = null
@@ -80,45 +82,30 @@ export async function PUT(
 
       imagePath = `/uploads/${filename}`
 
-      await db.query(
-        `
-        UPDATE products
-        SET
-          category_id = ?,
-          product_name = ?,
-          product_description = ?,
-          product_price = ?,
-          image_url = ?
-        WHERE id = ?
-        `,
-        [
-          category_id || null,
-          productName,
-          productDescription,
-          productPrice,
-          imagePath,
-          id,
-        ]
-      )
+      const { error } = await db
+        .from('products')
+        .update({
+          category_id: categoryId || null,
+          product_name: productName,
+          product_description: productDescription || null,
+          product_price: Number(productPrice),
+          image_url: imagePath,
+        })
+        .eq('id', Number(id))
+
+      if (error) throw error
     } else {
-      await db.query(
-        `
-        UPDATE products
-        SET
-          category_id = ?,
-          product_name = ?,
-          product_description = ?,
-          product_price = ?
-        WHERE id = ?
-        `,
-        [
-          category_id || null,
-          productName,
-          productDescription,
-          productPrice,
-          id,
-        ]
-      )
+      const { error } = await db
+        .from('products')
+        .update({
+          category_id: categoryId || null,
+          product_name: productName,
+          product_description: productDescription || null,
+          product_price: Number(productPrice),
+        })
+        .eq('id', Number(id))
+
+      if (error) throw error
     }
 
     return NextResponse.json({
@@ -153,10 +140,12 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    await db.query(
-      'DELETE FROM products WHERE id = ?',
-      [id]
-    )
+    const { error } = await db
+      .from('products')
+      .delete()
+      .eq('id', Number(id))
+
+    if (error) throw error
 
     return NextResponse.json({
       message: 'Product deleted successfully',

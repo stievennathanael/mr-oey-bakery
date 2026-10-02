@@ -20,20 +20,13 @@ export async function GET(req: Request) {
   }
 
   try {
-    const [rows] = await db.query(
-      `
-      SELECT
-        id,
-        name,
-        email,
-        phone,
-        role
-      FROM users
-      WHERE role = ?
-      ORDER BY id DESC
-      `,
-      ['customer']
-    )
+    const { data: rows, error } = await db
+      .from('users')
+      .select('id, name, email, phone, role')
+      .eq('role', 'customer')
+      .order('id', { ascending: false })
+
+    if (error) throw error
 
     return NextResponse.json(rows)
   } catch (error) {
