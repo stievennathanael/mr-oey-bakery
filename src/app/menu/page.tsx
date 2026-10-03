@@ -426,10 +426,7 @@ export default function MenuScreen() {
                 </h1>
 
                 <p className="mt-5 max-w-lg text-base leading-relaxed text-orange-100 sm:mt-6 sm:text-lg">
-                  Temukan berbagai pilihan roti,
-                  chiffon, dan donat premium yang
-                  dipanggang setiap hari menggunakan
-                  bahan berkualitas terbaik.
+                  Temukan berbagai pilihan produk seperti roti, chiffon, dan donat yang dipanggang setiap hari menggunakan bahan berkualitas terbaik dengan cita rasa premium.
                 </p>
 
                 <div className="mt-8 flex flex-wrap gap-3 sm:gap-4">

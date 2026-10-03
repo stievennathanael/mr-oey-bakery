@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import {
+  LogIn,
   CheckCircle2,
   Clock3,
   FileDown,
@@ -799,7 +800,7 @@ export default function OrderScreen() {
 
     if (!token) {
       setError(
-        'Silakan login sebagai customer untuk melihat order.'
+        'Silakan masuk terlebih dahulu untuk dapat melihat riwayat pesanan'
       )
       setOrders([])
       setLoading(false)
@@ -1102,7 +1103,7 @@ export default function OrderScreen() {
           <div className="mt-8 rounded-lg border border-orange-200 bg-white p-6 text-center shadow-sm sm:p-8">
             <ReceiptText className="mx-auto h-12 w-12 text-orange-500" />
             <h2 className="mt-4 text-2xl font-bold">
-              Pesanan belum dapat ditampilkan
+              Pesanan Belum Dapat Ditampilkan
             </h2>
             <p className="mx-auto mt-2 max-w-xl text-slate-900">
               {error}
@@ -1111,7 +1112,8 @@ export default function OrderScreen() {
               href="/auth/login"
               className="mt-6 inline-flex items-center justify-center rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
             >
-              Login
+              <LogIn size={18} />
+              Masuk
             </Link>
           </div>
         ) : loading ? (

@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react'
 import {
+  LogIn,
   ArrowRight,
   CheckCircle2,
   Clock3,
@@ -324,7 +325,7 @@ export default function CartPage() {
 
     if (!token) {
       setPageError(
-        'Silakan login sebagai customer untuk melihat cart.'
+        'Silakan masuk terlebih dahulu untuk dapat melihat keranjang'
       )
       setCart(emptyCart)
       notifyCartUpdated(0)
@@ -679,7 +680,7 @@ export default function CartPage() {
 
     if (!token) {
       setPageError(
-        'Silakan login sebagai customer untuk mengubah cart.'
+        'Silakan masuk terlebih dahulu untuk dapat mengubah keranjang'
       )
       return
     }
@@ -731,7 +732,7 @@ export default function CartPage() {
 
     if (!token) {
       setPageError(
-        'Silakan login sebagai customer untuk menghapus cart.'
+        'Silakan masuk terlebih dahulu untuk dapat menghapus keranjang'
       )
       return
     }
@@ -779,13 +780,13 @@ export default function CartPage() {
 
     if (!token) {
       setPageError(
-        'Silakan login sebagai customer untuk checkout.'
+        'Silakan masuk terlebih dahulu untuk dapat melakukan checkout'
       )
       return
     }
 
     if (!hasItems) {
-      setActionError('Cart masih kosong.')
+      setActionError('Keranjang masih kosong.')
       return
     }
 
@@ -877,7 +878,7 @@ export default function CartPage() {
               Cart
             </p>
             <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl md:text-3xl">
-              Keranjang Belanja
+              Keranjang Saya
             </h1>
           </div>
 
@@ -914,7 +915,7 @@ export default function CartPage() {
           <div className="mt-8 rounded-lg border border-orange-200 bg-white p-6 text-center shadow-sm sm:p-8">
             <ShoppingBag className="mx-auto h-12 w-12 text-orange-500" />
             <h2 className="mt-4 text-2xl font-bold">
-              Silakan Login terlebih dahulu.
+              Keranjang Belum Dapat Ditampilkan
             </h2>
             <p className="mx-auto mt-2 max-w-xl text-slate-900">
               {pageError}
@@ -923,7 +924,8 @@ export default function CartPage() {
               href="/auth/login"
               className="mt-6 inline-flex items-center justify-center rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
             >
-              Login
+              <LogIn size={18} />
+              Masuk
             </Link>
           </div>
         ) : loading ? (

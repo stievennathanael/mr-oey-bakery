@@ -50,7 +50,7 @@ const menus = [
   },
   {
     href: '/order',
-    name: 'Order',
+    name: 'Pesanan',
     icon: ReceiptText,
     isIcon: true,
   },
