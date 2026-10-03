@@ -256,12 +256,7 @@ export default function AccountPage() {
                 </h2>
 
                 <p className="mt-4 text-gray-900 leading-relaxed">
-                  Login terlebih dahulu
-                  untuk melihat informasi
-                  akun, riwayat pesanan,
-                  dan menikmati berbagai
-                  layanan dari
-                  Mr. Oey Bakery.
+                  Silakan masuk terlebih dahulu untuk dapat melihat informasi akun, keranjang, riwayat pesanan, dan menikmati layanan dari Mr. Oey Bakery
                 </p>
 
               </div>
@@ -338,7 +333,8 @@ export default function AccountPage() {
             </h2>
 
             <p className="mt-4 max-w-xs text-base leading-relaxed text-orange-100">
-              Dipanggang Segar Setiap Hari dengan Sepenuh Hati Menghadirkan Kualitas Terbaik Dalam Setiap Gigitan.
+              Dipanggang Setiap Hari Dengan Sepenuh Hati Untuk
+              Menghadirkan Kualitas Terbaik Dalam Setiap Gigitan
             </p>
 
           </motion.div>

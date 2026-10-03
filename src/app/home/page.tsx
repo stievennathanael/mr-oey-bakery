@@ -58,7 +58,7 @@ export default function HomeScreen() {
               Mr. Oey Bakery
             </h1>
             <p className="mx-auto max-w-3xl text-base leading-relaxed text-gray-200 sm:text-lg md:text-2xl">
-              Dipanggang Segar Setiap Hari dengan Sepenuh Hati
+              Dipanggang Setiap Hari Dengan Bahan Berkualitas Terbaik
             </p>
 
             <div className="mt-10 flex flex-col justify-center gap-4 sm:mt-12 sm:flex-row sm:gap-5">
@@ -308,7 +308,7 @@ export default function HomeScreen() {
           </h2>
 
           <p className="mb-8 text-base leading-relaxed text-gray-200 sm:text-lg lg:mb-10">
-            Temukan berbagai pilihan roti dan kue istimewa hanya di Mr. Oey.
+            Temukan berbagai pilihan produk yang tersedia di Mr. Oey Bakery
           </p>
 
           <button
@@ -330,8 +330,8 @@ export default function HomeScreen() {
               Mr. Oey Bakery
             </h2>
             <p className="leading-relaxed">
-              Dipanggang Segar Setiap Hari dengan Sepenuh Hati
-              Menghadirkan Kualitas Terbaik Dalam Setiap Gigitan.
+              Dipanggang Setiap Hari Dengan Sepenuh Hati Untuk
+              Menghadirkan Kualitas Terbaik Dalam Setiap Gigitan
             </p>
           </div>
 

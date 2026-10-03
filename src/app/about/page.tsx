@@ -69,7 +69,7 @@ export default function AboutScreen() {
             <p className="mx-auto max-w-4xl text-base leading-relaxed text-gray-200 md:text-xl">
               Berdiri sejak tahun 2019, Mr. Oey Bakery hadir membawa
               cita rasa klasik dengan sentuhan modern untuk menciptakan
-              pengalaman bakery yang hangat, autentik, dan berkualitas.
+              pengalaman bakery yang hangat, autentik, dan berkualitas
             </p>
 
             <div className="mt-10 flex flex-col justify-center gap-4 sm:mt-12 sm:flex-row sm:gap-5">
@@ -431,8 +431,8 @@ export default function AboutScreen() {
             </h2>
 
             <p className="leading-relaxed">
-              Dipanggang Segar Setiap Hari dengan Sepenuh Hati
-              Menghadirkan Kualitas Terbaik Dalam Setiap Gigitan.
+              Dipanggang Setiap Hari Dengan Sepenuh Hati Untuk
+              Menghadirkan Kualitas Terbaik Dalam Setiap Gigitan
             </p>
           </div>
 
