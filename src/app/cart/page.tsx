@@ -922,7 +922,7 @@ export default function CartPage() {
             </p>
             <Link
               href="/auth/login"
-              className="mt-6 inline-flex items-center justify-center rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
             >
               <LogIn size={18} />
               Masuk
