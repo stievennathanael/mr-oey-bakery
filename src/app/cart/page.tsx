@@ -1062,7 +1062,7 @@ export default function CartPage() {
                     Keranjang Kosong!
                   </h2>
                   <p className="mt-2 text-slate-900">
-                    Pilih roti favorit Anda dari Produk.
+                    Tambahkan terlebih dahulu produk pesanan Anda ke dalam keranjang
                   </p>
                   <Link
                     href="/menu"
