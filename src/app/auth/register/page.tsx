@@ -297,10 +297,10 @@ export default function RegisterScreen() {
             <Image
               src="/logo.png"
               alt="Mr Oey Bakery"
-              width={140}
-              height={140}
+              width={120}
+              height={120}
               priority
-              className="h-24 w-24 sm:h-[140px] sm:w-[140px]"
+              className="rounded-xl"
             />
 
             <h1 className="mt-3 text-center text-2xl font-bold text-orange-500 sm:text-3xl">
@@ -308,7 +308,7 @@ export default function RegisterScreen() {
             </h1>
 
             <p className="mt-3 text-center text-sm leading-relaxed text-gray-900 sm:text-base">
-              Selamat datang! Silakan buat akun untuk melanjutkan pemesanan produk favorit Anda.
+              Selamat datang! Silakan buat akun untuk melakukan pemesanan produk favorit Anda
             </p>
           </div>
 

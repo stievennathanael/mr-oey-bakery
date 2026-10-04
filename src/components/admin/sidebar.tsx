@@ -273,16 +273,16 @@ export default function AdminSidebar({
             alt="Mr Oey Logo"
             width={60}
             height={60}
-            className="rounded-xl"
+            className="h-14 w-14 drop-shadow-2xl sm:h-[60px] sm:w-[60px]"
           />
 
           <div>
-            <h1 className="text-2xl font-bold text-orange-500">
-              Mr. Oey
+            <h1 className="text-lg font-bold text-orange-500">
+              Mr. Oey Bakery
             </h1>
 
             <p className="text-sm text-gray-900">
-              Bakery Admin
+              Panel Admin
             </p>
           </div>
         </div>

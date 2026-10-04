@@ -164,30 +164,6 @@ export default function AboutScreen() {
                 berbagai pilihan cake & bakery premium yang dibuat
                 menggunakan bahan berkualitas terbaik.
               </p>
-
-            </div>
-
-            {/* Stats */}
-            <div className="mt-10 grid gap-4 sm:grid-cols-2 sm:gap-6 lg:mt-12">
-
-              <div className="rounded-2xl border border-orange-100 bg-orange-50 p-6 shadow-lg sm:rounded-3xl sm:p-8">
-                <h3 className="text-4xl font-bold text-orange-500 sm:text-5xl">
-                  4
-                </h3>
-                <p className="text-gray-900 mt-3">
-                  Mitra Reseller
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-orange-100 bg-orange-50 p-6 shadow-lg sm:rounded-3xl sm:p-8">
-                <h3 className="text-4xl font-bold text-orange-500 sm:text-5xl">
-                  1
-                </h3>
-                <p className="text-gray-900 mt-3">
-                  Gerai Roti & Kue
-                </p>
-              </div>
-
             </div>
           </motion.div>
         </div>
@@ -408,14 +384,17 @@ export default function AboutScreen() {
           </h2>
 
           <p className="mb-8 text-base leading-relaxed text-gray-200 sm:text-lg lg:mb-10">
-            Temukan berbagai pilihan roti dan kue istimewa hanya di Mr. Oey.
+            Temukan berbagai pilihan produk yang tersedia di Mr. Oey Bakery
           </p>
 
           <button
-            onClick={handleClickWA}
-            className="rounded-full bg-orange-500 px-8 py-4 font-semibold text-white shadow-2xl transition-all duration-300 hover:scale-105 hover:bg-orange-600 sm:px-10 sm:py-5 sm:text-lg"
-          >
-            Order Via WhatsApp
+            type="button"
+            onClick={() => router.push('/menu')}
+            aria-label="Go to Menu Page"
+            title="Go to Menu Page"
+            className="rounded-full bg-orange-500 px-8 py-4 font-semibold text-white shadow-xl transition-all duration-300 hover:scale-105 hover:bg-orange-600"
+            >
+            Produk Kami
           </button>
         </motion.div>
       </section>

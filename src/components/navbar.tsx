@@ -356,9 +356,9 @@ export const Navbar = () => {
         <Image
           src="/logo.png"
           alt="Logo"
-          width={64}
-          height={64}
-          className="h-14 w-14 sm:h-[70px] sm:w-[70px]"
+          width={60}
+          height={60}
+          className="h-14 w-14 drop-shadow-2xl sm:h-[60px] sm:w-[60px]"
         />
       </div>
 

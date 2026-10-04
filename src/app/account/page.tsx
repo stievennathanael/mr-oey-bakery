@@ -134,7 +134,7 @@ export default function AccountPage() {
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-500 shadow-lg sm:h-24 sm:w-24">
 
               <UserRound
-                size={40}
+                size={55}
                 className="text-white"
               />
 
@@ -235,7 +235,7 @@ export default function AccountPage() {
                 onClick={
                   handleLogout
                 }
-                className="mt-8 flex w-full items-center justify-center gap-3 rounded-2xl bg-red-500 py-3.5 font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-red-600 hover:shadow-xl active:scale-95"
+                className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-red-500 py-3.5 font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-red-600 hover:shadow-xl active:scale-95"
               >
 
                 <LogOut size={18} />
