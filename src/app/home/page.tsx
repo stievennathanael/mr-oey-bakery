@@ -341,6 +341,21 @@ export default function HomeScreen() {
                   Tentang Kami
                 </a>
               </li>
+              <li>
+                <a href="/cart" className="hover:text-orange-400 transition-all">
+                  Keranjang
+                </a>
+              </li>
+              <li>
+                <a href="/order" className="hover:text-orange-400 transition-all">
+                  Pesanan
+                </a>
+              </li>
+              <li>
+                <a href="/account" className="hover:text-orange-400 transition-all">
+                  Akun
+                </a>
+              </li>
             </ul>
           </div>
 
