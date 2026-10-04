@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          message: 'All fields are required',
+          message: 'Semua kolom wajib diisi',
         },
         {
           status: 400,
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Name must be at least 3 characters',
+            'Nama harus terdiri dari minimal 3 karakter',
         },
         {
           status: 400,
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Invalid email format',
+            'Format email tidak valid',
         },
         {
           status: 400,
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Password must be at least 6 characters',
+            'Kata sandi harus terdiri dari minimal 6 karakter',
         },
         {
           status: 400,
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Phone number must contain only digits',
+            'Nomor telepon harus hanya terdiri dari angka',
         },
         {
           status: 400,
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Email already exists',
+            'Alamat email tersebut sudah ada',
         },
         {
           status: 400,

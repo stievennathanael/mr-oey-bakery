@@ -20,7 +20,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Email and password are required',
+            'Alamat Email dan Password wajib diisi',
         },
         {
           status: 400,
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Email not found',
+            'Alamat Email tidak ditemukan',
         },
         {
           status: 404,
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message:
-            'Wrong password',
+            'Password salah',
         },
         {
           status: 401,
