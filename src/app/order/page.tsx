@@ -17,6 +17,7 @@ import {
   PackageCheck,
   ReceiptText,
   RotateCcw,
+  ArrowRight,
 } from 'lucide-react'
 import DateRangePicker, {
   createEmptyDateRangeValue,
@@ -1124,16 +1125,17 @@ export default function OrderScreen() {
           <div className="mt-8 rounded-lg border border-slate-200 bg-white p-10 text-center shadow-sm">
             <PackageCheck className="mx-auto h-12 w-12 text-orange-500" />
             <h2 className="mt-4 text-2xl font-bold">
-              Belum ada pesanan
+              Belum Ada Pesanan!
             </h2>
             <p className="mt-2 text-slate-900">
-              Checkout dari cart akan tampil di sini.
+              Pesanan yang Anda checkout akan tampil di sini
             </p>
             <Link
               href="/menu"
-              className="mt-6 inline-flex items-center justify-center rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg bg-orange-500 px-5 py-3 font-semibold text-white transition hover:bg-orange-600"
             >
               Pilih Produk
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         ) : filteredOrders.length === 0 ? (
